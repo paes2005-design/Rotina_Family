@@ -264,6 +264,22 @@
         .badge-falta { background-color: var(--danger); }
         .badge-andamento { background-color: var(--primary); }
         .badge-pendente { background-color: #6c757d; }
+
+        /* Tabela contida dentro do template: rola por dentro em vez de estourar a tela no celular */
+        .tabela-scroll { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+        .tabela-scroll table { min-width: 640px; }
+
+        /* Painel de pontuação replicado do app do cliente, dentro do Monitor de Tarefas */
+        .secao-pontuacao { margin: 5px 0 25px; }
+        .secao-pontuacao h3 { font-size: 15px; color: #555; margin-bottom: 10px; }
+        .dash-cards-admin { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; }
+        .card-pontuacao { background: var(--bg-color); padding: 15px; border-radius: 16px; text-align: center; border: 1px solid #d7e3f0; }
+        .card-pontuacao span { font-size: 0.8rem; color: var(--primary); display: block; font-weight: 700; text-transform: uppercase; margin-bottom: 6px; }
+        .card-pontuacao strong { font-size: 1.4rem; color: var(--text-color); }
+        .card-pontuacao strong small { font-size: 0.85rem; color: #999; font-weight: 500; }
+        @media (max-width: 480px) {
+            .dash-cards-admin { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body>
@@ -426,6 +442,7 @@
                         </select>
                     </div>
                 </div>
+                <div class="tabela-scroll">
                 <table>
                     <thead>
                         <tr>
@@ -441,6 +458,7 @@
                         </tr>
                     </tbody>
                 </table>
+                </div>
             </div>
 
         </div>
@@ -463,6 +481,16 @@
             </div>
             <p style="font-size: 12px; color: #777; margin-bottom: 20px;">As metas se repetem toda semana no mesmo dia da semana.</p>
 
+            <div class="secao-pontuacao" id="secaoPontuacaoMonitor" style="display:none;">
+                <h3>Pontuação de <span id="nomeIntegrantePontuacao"></span></h3>
+                <div class="dash-cards-admin">
+                    <div class="card-pontuacao"><span>Hoje</span><strong><span id="admPtsHoje">0</span><small id="admPossivelHoje"> / 0 pts</small></strong></div>
+                    <div class="card-pontuacao"><span>Semana</span><strong><span id="admPtsSemana">0</span><small id="admPossivelSemana"> / 0 pts</small></strong></div>
+                    <div class="card-pontuacao"><span>Mês</span><strong><span id="admPtsMes">0</span><small id="admPossivelMes"> / 0 pts</small></strong></div>
+                </div>
+            </div>
+
+            <div class="tabela-scroll">
             <table>
                 <thead>
                     <tr>
@@ -480,12 +508,13 @@
                     </tr>
                 </tbody>
             </table>
+            </div>
         </div>
     </div>
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-    import { getFirestore, collection, query, where, onSnapshot, addDoc, getDocs, writeBatch, doc, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    import { getFirestore, collection, query, where, onSnapshot, addDoc, getDocs, writeBatch, doc, deleteDoc, updateDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
     const firebaseConfig = {
         apiKey: "AIzaSyCP9odEV8TJGOM4lflHk64BbPyXXVjGcYg",
@@ -504,10 +533,73 @@
     let tarefasCache = [];
     let unsubscribePerfis = null;
     let unsubscribeTarefasAdmin = null;
+    let unsubscribeHistoricoAdmin = null;
+    let integranteHistoricoAtual = null;
+    let historicoAdminCache = [];
 
     const diasSemana = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 
     document.getElementById('filtroData').valueAsDate = new Date();
+
+    function formatarDataISO(d) {
+        const ano = d.getFullYear();
+        const mes = String(d.getMonth() + 1).padStart(2, '0');
+        const dia = String(d.getDate()).padStart(2, '0');
+        return `${ano}-${mes}-${dia}`;
+    }
+
+    function obterInicioSemana(dataRef = new Date()) {
+        const d = new Date(dataRef);
+        d.setHours(0, 0, 0, 0);
+        d.setDate(d.getDate() - d.getDay()); // volta até o Domingo
+        return d;
+    }
+
+    function contarOcorrenciasNoMes(diaSemanaTexto, ano, mes) {
+        const indiceDia = diasSemana.indexOf(diaSemanaTexto);
+        const totalDiasNoMes = new Date(ano, mes + 1, 0).getDate();
+        let contagem = 0;
+        for (let dia = 1; dia <= totalDiasNoMes; dia++) {
+            if (new Date(ano, mes, dia).getDay() === indiceDia) contagem++;
+        }
+        return contagem;
+    }
+
+    // Reset semanal (aos domingos). Roda também aqui no painel, caso o administrador abra
+    // antes de qualquer cliente — o histórico já guardou tudo, então é seguro resetar.
+    async function verificarEExecutarResetSemanal(grupoId) {
+        try {
+            const refConfig = doc(db, "configGrupos", grupoId);
+            const snapConfig = await getDoc(refConfig);
+            const dadosConfig = snapConfig.exists() ? snapConfig.data() : {};
+
+            const inicioSemanaAtual = obterInicioSemana();
+            const ultimoReset = dadosConfig.ultimoReset ? new Date(dadosConfig.ultimoReset) : new Date(0);
+
+            if (ultimoReset < inicioSemanaAtual) {
+                const qTarefas = query(collection(db, "tarefas"), where("grupoId", "==", grupoId));
+                const snapTarefas = await getDocs(qTarefas);
+
+                const batch = writeBatch(db);
+                snapTarefas.forEach((docSnap) => {
+                    const t = docSnap.data();
+                    if (t.status && t.status !== "Pendente") {
+                        batch.update(docSnap.ref, {
+                            status: "Pendente",
+                            horarioInicio: "",
+                            horarioTermino: "",
+                            pontosGanhos: 0,
+                            iniciouComAtraso: false
+                        });
+                    }
+                });
+                batch.set(refConfig, { grupoId, ultimoReset: inicioSemanaAtual.toISOString() }, { merge: true });
+                await batch.commit();
+            }
+        } catch (erro) {
+            console.error("Erro ao verificar reset semanal:", erro);
+        }
+    }
 
     window.mudarAuthTab = (painel, evento) => {
         document.querySelectorAll('.auth-form-panel').forEach(el => el.classList.remove('active'));
@@ -617,6 +709,7 @@
         document.getElementById('displayCodigoAdmin').innerText = adminLogadoAtual.codigoAdmin || "ADM-Gen";
         document.getElementById('displayCodigoCliente').innerText = adminLogadoAtual.codigoCliente || adminLogadoAtual.grupoId || "CLI-Gen";
 
+        await verificarEExecutarResetSemanal(adminLogadoAtual.codigoCliente || adminLogadoAtual.grupoId);
         iniciarEscutasFirebase();
     };
 
@@ -656,6 +749,9 @@
     window.realizarLogout = () => {
         if(unsubscribePerfis) unsubscribePerfis();
         if(unsubscribeTarefasAdmin) unsubscribeTarefasAdmin();
+        if(unsubscribeHistoricoAdmin) unsubscribeHistoricoAdmin();
+        integranteHistoricoAtual = null;
+        historicoAdminCache = [];
         adminLogadoAtual = null;
         perfisCache = [];
         tarefasCache = [];
@@ -905,7 +1001,75 @@
         selectExclusaoIntegrante.value = exclusaoIntegranteAtual;
     }
 
+    function renderizarPainelPontuacaoAdmin(historicoLista) {
+        const filtroUsuario = document.getElementById('filtroIntegrante').value;
+
+        const hojeISO = formatarDataISO(new Date());
+        const inicioSemanaISO = formatarDataISO(obterInicioSemana());
+        const anoAtual = new Date().getFullYear();
+        const mesAtual = new Date().getMonth();
+
+        let ganhoHoje = 0, ganhoSemana = 0, ganhoMes = 0;
+        historicoLista.forEach((h) => {
+            if(!h.status || !h.status.includes("Prazo")) return;
+            const pts = h.pontosGanhos || 0;
+            if(h.data === hojeISO) ganhoHoje += pts;
+            if(h.data >= inicioSemanaISO) ganhoSemana += pts;
+            const [anoH, mesH] = (h.data || "0-0-0").split('-').map(Number);
+            if(anoH === anoAtual && (mesH - 1) === mesAtual) ganhoMes += pts;
+        });
+
+        const tarefasDoIntegrante = tarefasCache.filter(t => t.perfilNome === filtroUsuario);
+        const hojeDiaTexto = diasSemana[new Date().getDay()];
+
+        let possivelHoje = 0, possivelSemana = 0, possivelMes = 0;
+        tarefasDoIntegrante.forEach((t) => {
+            if(t.diaSemana === hojeDiaTexto) possivelHoje += t.pontosMaximos || 0;
+            possivelSemana += t.pontosMaximos || 0;
+            possivelMes += (t.pontosMaximos || 0) * contarOcorrenciasNoMes(t.diaSemana, anoAtual, mesAtual);
+        });
+
+        document.getElementById('nomeIntegrantePontuacao').innerText = filtroUsuario;
+        document.getElementById('admPtsHoje').innerText = ganhoHoje;
+        document.getElementById('admPossivelHoje').innerText = ` / ${possivelHoje} pts`;
+        document.getElementById('admPtsSemana').innerText = ganhoSemana;
+        document.getElementById('admPossivelSemana').innerText = ` / ${possivelSemana} pts`;
+        document.getElementById('admPtsMes').innerText = ganhoMes;
+        document.getElementById('admPossivelMes').innerText = ` / ${possivelMes} pts`;
+    }
+
+    function atualizarPainelPontuacaoAdmin() {
+        const filtroUsuario = document.getElementById('filtroIntegrante').value;
+        const secao = document.getElementById('secaoPontuacaoMonitor');
+
+        if(!filtroUsuario) {
+            secao.style.display = 'none';
+            if(unsubscribeHistoricoAdmin) { unsubscribeHistoricoAdmin(); unsubscribeHistoricoAdmin = null; }
+            integranteHistoricoAtual = null;
+            return;
+        }
+
+        secao.style.display = 'block';
+
+        if(integranteHistoricoAtual === filtroUsuario) {
+            renderizarPainelPontuacaoAdmin(historicoAdminCache);
+            return;
+        }
+
+        if(unsubscribeHistoricoAdmin) unsubscribeHistoricoAdmin();
+        integranteHistoricoAtual = filtroUsuario;
+
+        const gId = adminLogadoAtual.codigoCliente || adminLogadoAtual.grupoId;
+        const qHistorico = query(collection(db, "historico"), where("grupoId", "==", gId), where("perfilNome", "==", filtroUsuario));
+        unsubscribeHistoricoAdmin = onSnapshot(qHistorico, (snapshot) => {
+            historicoAdminCache = snapshot.docs.map(d => d.data());
+            renderizarPainelPontuacaoAdmin(historicoAdminCache);
+        });
+    }
+
     window.atualizarMonitor = () => {
+        atualizarPainelPontuacaoAdmin();
+
         const tbody = document.getElementById('tbodyMonitor');
         const filtroUsuario = document.getElementById('filtroIntegrante').value;
         const filtroDataValor = document.getElementById('filtroData').value;

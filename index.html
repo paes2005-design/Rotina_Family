@@ -807,8 +807,8 @@
             return;
         }
 
-        if(horaInicio > horaFim) {
-            alert('Erro: O horário de início não pode ser posterior ao horário de término.');
+        if(horaInicio >= horaFim) {
+            alert('Erro: O horário de início não pode ser posterior ou igual ao horário de término.');
             return;
         }
 
@@ -824,65 +824,75 @@
             let tAntiga = tarefasCache.find(t => t.id === editId);
             if(!tAntiga) return;
 
-            // Verifica conflitos em todos os dias que serão salvos/atualizados
+            // Grupo de tarefas existentes sendo editadas
+            const tarefasRelacionadas = tarefasCache.filter(t => t.nome === tAntiga.nome && t.perfilNome === tAntiga.perfilNome);
+            const idsRelacionados = new Set(tarefasRelacionadas.map(t => t.id));
+
+            // Validação de Conflito de Horário para cada dia selecionado
             for(let dia of diasSelecionados) {
                 let conflito = tarefasCache.find(t => {
-                    let ehDaMesmaTarefa = (t.nome === tAntiga.nome && t.perfilNome === tAntiga.perfilNome);
-                    if(ehDaMesmaTarefa) return false;
+                    // Ignora as tarefas do próprio grupo que está sendo editado
+                    if(idsRelacionados.has(t.id)) return false;
 
+                    // Apenas valida para o mesmo integrante e mesmo dia da semana
                     if(t.perfilNome !== responsavel || t.diaSemana !== dia) return false;
-                    return (horaInicio <= t.horaSugeridaFim && horaFim >= t.horaSugeridaInicio);
+
+                    // Trava de sobreposição de horários
+                    return (horaInicio < t.horaSugeridaFim && horaFim > t.horaSugeridaInicio);
                 });
 
                 if(conflito) {
-                    alert(`Erro de Conflito! O integrante "${responsavel}" já possui a tarefa "${conflito.nome}" agendada para ${dia}.`);
+                    alert(`Erro de Conflito! O integrante "${responsavel}" já possui a tarefa "${conflito.nome}" (${conflito.horaSugeridaInicio} às ${conflito.horaSugeridaFim}) agendada para ${dia}.`);
                     return;
                 }
             }
 
-            const tarefasRelacionadas = tarefasCache.filter(t => t.nome === tAntiga.nome && t.perfilNome === tAntiga.perfilNome);
-            const diasAtuaisMap = new Map();
-            tarefasRelacionadas.forEach(t => diasAtuaisMap.set(t.diaSemana, t));
-
             const batch = writeBatch(db);
 
-            // Atualiza os dias existentes que continuam marcados e cria os novos
-            diasSelecionados.forEach(dia => {
-                if (diasAtuaisMap.has(dia)) {
-                    const tRef = doc(db, "tarefas", diasAtuaisMap.get(dia).id);
-                    batch.update(tRef, {
-                        nome: nomeTarefa,
-                        perfilNome: responsavel,
-                        horaSugeridaInicio: horaInicio,
-                        horaSugeridaFim: horaFim,
-                        tempoLimite: tolerancia,
-                        pontosMaximos: pontosMax
-                    });
-                } else {
-                    const novaRef = doc(collection(db, "tarefas"));
-                    batch.set(novaRef, {
-                        grupoId: gId,
-                        nome: nomeTarefa,
-                        perfilNome: responsavel,
-                        horaSugeridaInicio: horaInicio,
-                        horaSugeridaFim: horaFim,
-                        diaSemana: dia,
-                        tempoLimite: tolerancia,
-                        pontosMaximos: pontosMax,
-                        status: "Pendente",
-                        pontosGanhos: 0,
-                        horarioInicio: "",
-                        horarioTermino: "",
-                        iniciouComAtraso: false
-                    });
-                }
-            });
+            // Atualiza, limpa duplicatas existentes ou remove tarefas para cada dia da semana
+            diasSemana.forEach(dia => {
+                const tarefasDoDia = tarefasRelacionadas.filter(t => t.diaSemana === dia);
 
-            // Remove os dias que foram desmarcados na edição
-            tarefasRelacionadas.forEach(t => {
-                if (!diasSelecionados.includes(t.diaSemana)) {
-                    const tRef = doc(db, "tarefas", t.id);
-                    batch.delete(tRef);
+                if (diasSelecionados.includes(dia)) {
+                    if (tarefasDoDia.length > 0) {
+                        // Atualiza a primeira tarefa para esse dia
+                        const tRef = doc(db, "tarefas", tarefasDoDia[0].id);
+                        batch.update(tRef, {
+                            nome: nomeTarefa,
+                            perfilNome: responsavel,
+                            horaSugeridaInicio: horaInicio,
+                            horaSugeridaFim: horaFim,
+                            tempoLimite: tolerancia,
+                            pontosMaximos: pontosMax
+                        });
+                        // Remove duplicatas extras caso já existissem anteriormente no mesmo dia
+                        for (let i = 1; i < tarefasDoDia.length; i++) {
+                            batch.delete(doc(db, "tarefas", tarefasDoDia[i].id));
+                        }
+                    } else {
+                        // Cria tarefa para o novo dia selecionado
+                        const novaRef = doc(collection(db, "tarefas"));
+                        batch.set(novaRef, {
+                            grupoId: gId,
+                            nome: nomeTarefa,
+                            perfilNome: responsavel,
+                            horaSugeridaInicio: horaInicio,
+                            horaSugeridaFim: horaFim,
+                            diaSemana: dia,
+                            tempoLimite: tolerancia,
+                            pontosMaximos: pontosMax,
+                            status: "Pendente",
+                            pontosGanhos: 0,
+                            horarioInicio: "",
+                            horarioTermino: "",
+                            iniciouComAtraso: false
+                        });
+                    }
+                } else {
+                    // Se o dia foi desmarcado, deleta as tarefas desse grupo naquele dia
+                    tarefasDoDia.forEach(t => {
+                        batch.delete(doc(db, "tarefas", t.id));
+                    });
                 }
             });
 
@@ -895,11 +905,11 @@
             for(let dia of diasSelecionados) {
                 let conflito = tarefasCache.find(t => {
                     if(t.perfilNome !== responsavel || t.diaSemana !== dia) return false;
-                    return (horaInicio <= t.horaSugeridaFim && horaFim >= t.horaSugeridaInicio);
+                    return (horaInicio < t.horaSugeridaFim && horaFim > t.horaSugeridaInicio);
                 });
 
                 if(conflito) {
-                    alert(`Erro de Conflito! O integrante "${responsavel}" já possui a tarefa "${conflito.nome}" para ${dia}.`);
+                    alert(`Erro de Conflito! O integrante "${responsavel}" já possui a tarefa "${conflito.nome}" (${conflito.horaSugeridaInicio} às ${conflito.horaSugeridaFim}) para ${dia}.`);
                     return;
                 }
             }
@@ -954,7 +964,7 @@
         document.getElementById('tituloFormTarefa').innerText = `Editar Tarefa (Múltiplos Dias)`;
         document.getElementById('btnSalvarTarefa').innerText = "Atualizar Tarefa";
         document.getElementById('btnCancelarEdicao').style.display = "inline-block";
-        document.getElementById('blocoDiasSemana').style.display = "block"; // Mantém visível para poder editar
+        document.getElementById('blocoDiasSemana').style.display = "block";
 
         window.scrollTo({ top: 300, behavior: 'smooth' });
     };

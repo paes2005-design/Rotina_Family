@@ -265,11 +265,9 @@
         .badge-andamento { background-color: var(--primary); }
         .badge-pendente { background-color: #6c757d; }
 
-        /* Tabela contida dentro do template: rola por dentro em vez de estourar a tela no celular */
         .tabela-scroll { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
         .tabela-scroll table { min-width: 640px; }
 
-        /* Painel de pontuação replicado do app do cliente, dentro do Monitor de Tarefas */
         .secao-pontuacao { margin: 5px 0 25px; }
         .secao-pontuacao h3 { font-size: 15px; color: #555; margin-bottom: 10px; }
         .dash-cards-admin { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 15px; }
@@ -284,7 +282,6 @@
 </head>
 <body>
 
-    <!-- TELA DE ACESSO / PAINEL DO ADMINISTRADOR -->
     <div id="telaAcesso">
         <h2>Painel do Administrador</h2>
 
@@ -327,7 +324,6 @@
         </div>
     </div>
 
-    <!-- SISTEMA PRINCIPAL -->
     <div id="sistemaPrincipal">
         <header>
             <h1>Espaço de Metas</h1>
@@ -340,7 +336,6 @@
             <button class="tab-btn" onclick="mudarAba('monitor', event)">Aba Monitor de Tarefas</button>
         </div>
 
-        <!-- ABA 1: CADASTRO -->
         <div id="cadastro" class="tab-content active">
 
             <div class="codigo-familia-box">
@@ -419,7 +414,6 @@
                 </div>
             </div>
 
-            <!-- SEÇÃO: EXCLUSÃO E EDIÇÃO DE TAREFAS POR INTEGRANTE E DIA DA SEMANA -->
             <div style="background: #fafafa; padding: 15px; border-radius: 6px; border-left: 4px solid var(--danger);">
                 <h3>Gerenciar / Excluir Tarefas Cadastradas</h3>
                 <div style="display: flex; gap: 15px; margin-bottom: 15px;">
@@ -463,7 +457,6 @@
 
         </div>
 
-        <!-- ABA 2: MONITOR DE TAREFAS -->
         <div id="monitor" class="tab-content">
             <h2>Monitor de Tarefas Ativas</h2>
 
@@ -551,7 +544,7 @@
     function obterInicioSemana(dataRef = new Date()) {
         const d = new Date(dataRef);
         d.setHours(0, 0, 0, 0);
-        d.setDate(d.getDate() - d.getDay()); // volta até o Domingo
+        d.setDate(d.getDate() - d.getDay()); 
         return d;
     }
 
@@ -565,8 +558,6 @@
         return contagem;
     }
 
-    // Reset semanal (aos domingos). Roda também aqui no painel, caso o administrador abra
-    // antes de qualquer cliente — o histórico já guardou tudo, então é seguro resetar.
     async function verificarEExecutarResetSemanal(grupoId) {
         try {
             const refConfig = doc(db, "configGrupos", grupoId);
@@ -702,6 +693,7 @@
         }
 
         adminLogadoAtual = { id: adminDoc.id, ...adminData };
+        localStorage.setItem('adminLogado', JSON.stringify(adminLogadoAtual));
 
         document.getElementById('telaAcesso').style.display = 'none';
         document.getElementById('sistemaPrincipal').style.display = 'block';
@@ -755,6 +747,7 @@
         adminLogadoAtual = null;
         perfisCache = [];
         tarefasCache = [];
+        localStorage.removeItem('adminLogado');
         document.getElementById('sistemaPrincipal').style.display = 'none';
         document.getElementById('telaAcesso').style.display = 'block';
         document.getElementById('loginEmail').value = '';
@@ -820,41 +813,85 @@
         }
 
         const gId = adminLogadoAtual.codigoCliente || adminLogadoAtual.grupoId;
+        const diasSelecionados = Array.from(document.querySelectorAll('.dia-semana-check:checked')).map(cb => cb.value);
+
+        if(diasSelecionados.length === 0) {
+            alert('Escolha ao menos um dia da semana.');
+            return;
+        }
 
         if(editId) {
-            let tarefaAntiga = tarefasCache.find(t => t.id === editId);
-            let diaAtual = tarefaAntiga ? tarefaAntiga.diaSemana : "Domingo";
+            let tAntiga = tarefasCache.find(t => t.id === editId);
+            if(!tAntiga) return;
 
-            let conflito = tarefasCache.find(t => {
-                if(t.id === editId) return false;
-                if(t.perfilNome !== responsavel || t.diaSemana !== diaAtual) return false;
-                return (horaInicio <= t.horaSugeridaFim && horaFim >= t.horaSugeridaInicio);
-            });
+            // Verifica conflitos em todos os dias que serão salvos/atualizados
+            for(let dia of diasSelecionados) {
+                let conflito = tarefasCache.find(t => {
+                    let ehDaMesmaTarefa = (t.nome === tAntiga.nome && t.perfilNome === tAntiga.perfilNome);
+                    if(ehDaMesmaTarefa) return false;
 
-            if(conflito) {
-                alert(`Erro de Conflito! O integrante "${responsavel}" já possui a tarefa "${conflito.nome}" agendada para ${diaAtual}.`);
-                return;
+                    if(t.perfilNome !== responsavel || t.diaSemana !== dia) return false;
+                    return (horaInicio <= t.horaSugeridaFim && horaFim >= t.horaSugeridaInicio);
+                });
+
+                if(conflito) {
+                    alert(`Erro de Conflito! O integrante "${responsavel}" já possui a tarefa "${conflito.nome}" agendada para ${dia}.`);
+                    return;
+                }
             }
 
-            await updateDoc(doc(db, "tarefas", editId), {
-                nome: nomeTarefa,
-                perfilNome: responsavel,
-                horaSugeridaInicio: horaInicio,
-                horaSugeridaFim: horaFim,
-                tempoLimite: tolerancia,
-                pontosMaximos: pontosMax
+            const tarefasRelacionadas = tarefasCache.filter(t => t.nome === tAntiga.nome && t.perfilNome === tAntiga.perfilNome);
+            const diasAtuaisMap = new Map();
+            tarefasRelacionadas.forEach(t => diasAtuaisMap.set(t.diaSemana, t));
+
+            const batch = writeBatch(db);
+
+            // Atualiza os dias existentes que continuam marcados e cria os novos
+            diasSelecionados.forEach(dia => {
+                if (diasAtuaisMap.has(dia)) {
+                    const tRef = doc(db, "tarefas", diasAtuaisMap.get(dia).id);
+                    batch.update(tRef, {
+                        nome: nomeTarefa,
+                        perfilNome: responsavel,
+                        horaSugeridaInicio: horaInicio,
+                        horaSugeridaFim: horaFim,
+                        tempoLimite: tolerancia,
+                        pontosMaximos: pontosMax
+                    });
+                } else {
+                    const novaRef = doc(collection(db, "tarefas"));
+                    batch.set(novaRef, {
+                        grupoId: gId,
+                        nome: nomeTarefa,
+                        perfilNome: responsavel,
+                        horaSugeridaInicio: horaInicio,
+                        horaSugeridaFim: horaFim,
+                        diaSemana: dia,
+                        tempoLimite: tolerancia,
+                        pontosMaximos: pontosMax,
+                        status: "Pendente",
+                        pontosGanhos: 0,
+                        horarioInicio: "",
+                        horarioTermino: "",
+                        iniciouComAtraso: false
+                    });
+                }
             });
 
-            alert('Tarefa atualizada com sucesso!');
+            // Remove os dias que foram desmarcados na edição
+            tarefasRelacionadas.forEach(t => {
+                if (!diasSelecionados.includes(t.diaSemana)) {
+                    const tRef = doc(db, "tarefas", t.id);
+                    batch.delete(tRef);
+                }
+            });
+
+            await batch.commit();
+            alert('Tarefa atualizada para os dias selecionados com sucesso!');
             cancelarEdicaoTarefa();
+
         } else {
-            const diasSelecionados = Array.from(document.querySelectorAll('.dia-semana-check:checked')).map(cb => cb.value);
-
-            if(diasSelecionados.length === 0) {
-                alert('Escolha ao menos um dia da semana.');
-                return;
-            }
-
+            // Criação de nova tarefa
             for(let dia of diasSelecionados) {
                 let conflito = tarefasCache.find(t => {
                     if(t.perfilNome !== responsavel || t.diaSemana !== dia) return false;
@@ -906,10 +943,18 @@
         document.getElementById('toleranciaTarefa').value = t.tempoLimite || 0;
         document.getElementById('pontosMeta').value = t.pontosMaximos || 0;
 
-        document.getElementById('tituloFormTarefa').innerText = `Editar Tarefa (${t.diaSemana})`;
+        // Marca automaticamente os dias que essa tarefa já possui no banco
+        const tarefasRelacionadas = tarefasCache.filter(item => item.nome === t.nome && item.perfilNome === t.perfilNome);
+        const diasAtivos = tarefasRelacionadas.map(item => item.diaSemana);
+        
+        document.querySelectorAll('.dia-semana-check').forEach(cb => {
+            cb.checked = diasAtivos.includes(cb.value);
+        });
+
+        document.getElementById('tituloFormTarefa').innerText = `Editar Tarefa (Múltiplos Dias)`;
         document.getElementById('btnSalvarTarefa').innerText = "Atualizar Tarefa";
         document.getElementById('btnCancelarEdicao').style.display = "inline-block";
-        document.getElementById('blocoDiasSemana').style.display = "none";
+        document.getElementById('blocoDiasSemana').style.display = "block"; // Mantém visível para poder editar
 
         window.scrollTo({ top: 300, behavior: 'smooth' });
     };
@@ -921,6 +966,7 @@
         document.getElementById('horarioFimSugerido').value = '08:30';
         document.getElementById('toleranciaTarefa').value = '10';
         document.getElementById('pontosMeta').value = '20';
+        document.querySelectorAll('.dia-semana-check').forEach(cb => cb.checked = false);
 
         document.getElementById('tituloFormTarefa').innerText = "Cadastrar Meta / Tarefa";
         document.getElementById('btnSalvarTarefa').innerText = "Salvar Tarefa";
@@ -1105,9 +1151,9 @@
 
             let horariosHtml = `<strong>${t.horaSugeridaInicio} - ${t.horaSugeridaFim}</strong>`;
             if(t.horarioInicio) {
-                horariosHtml += `<div style="font-size: 11px; color: #555; margin-top: 3px;">Real: ${t.horarioInicio} até ${t.horarioTermino || '--:--'}</div>`;
+                horariosHtml += `<div style="font-size: 11px; color: #555; margin-top: 3px;">Real: ${t.horarioInicio} até ${t.horarioTermino || '--:--'} | Tol: ${t.tempoLimite || 0} min</div>`;
             } else {
-                horariosHtml += `<div style="font-size: 11px; color: #999; margin-top: 3px;">Real: Não executada</div>`;
+                horariosHtml += `<div style="font-size: 11px; color: #999; margin-top: 3px;">Real: Não executada | Tol: ${t.tempoLimite || 0} min</div>`;
             }
 
             tbody.innerHTML += `
@@ -1122,6 +1168,20 @@
             `;
         });
     };
+
+    // Auto-Login ao carregar a página se houver sessão salva
+    const savedAdmin = localStorage.getItem('adminLogado');
+    if (savedAdmin) {
+        adminLogadoAtual = JSON.parse(savedAdmin);
+        document.getElementById('telaAcesso').style.display = 'none';
+        document.getElementById('sistemaPrincipal').style.display = 'block';
+        
+        document.getElementById('displayCodigoAdmin').innerText = adminLogadoAtual.codigoAdmin || "ADM-Gen";
+        document.getElementById('displayCodigoCliente').innerText = adminLogadoAtual.codigoCliente || adminLogadoAtual.grupoId || "CLI-Gen";
+
+        verificarEExecutarResetSemanal(adminLogadoAtual.codigoCliente || adminLogadoAtual.grupoId);
+        iniciarEscutasFirebase();
+    }
 </script>
 <script>
   if ('serviceWorker' in navigator) {

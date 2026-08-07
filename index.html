@@ -265,6 +265,39 @@
         .badge-andamento { background-color: var(--primary); }
         .badge-pendente { background-color: #6c757d; }
 
+        /* Observação fantasma da justificativa de atraso, na coluna de horas */
+        .tooltip-justificativa {
+            position: relative;
+            cursor: help;
+            margin-left: 6px;
+            color: var(--danger);
+            font-size: 11px;
+            border-bottom: 1px dashed var(--danger);
+        }
+        .tooltip-justificativa .tooltip-texto {
+            visibility: hidden;
+            opacity: 0;
+            position: absolute;
+            bottom: 130%;
+            left: 0;
+            background: #333;
+            color: #fff;
+            text-align: left;
+            padding: 8px 10px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: normal;
+            white-space: normal;
+            width: 200px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            z-index: 20;
+            transition: opacity 0.15s ease;
+        }
+        .tooltip-justificativa:hover .tooltip-texto {
+            visibility: visible;
+            opacity: 1;
+        }
+
         .tabela-scroll { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
         .tabela-scroll table { min-width: 640px; }
 
@@ -477,7 +510,7 @@
             <div class="secao-pontuacao" id="secaoPontuacaoMonitor" style="display:none;">
                 <h3>Pontuação de <span id="nomeIntegrantePontuacao"></span></h3>
                 <div class="dash-cards-admin">
-                    <div class="card-pontuacao"><span>Hoje</span><strong><span id="admPtsHoje">0</span><small id="admPossivelHoje"> / 0 pts</small></strong></div>
+                    <div class="card-pontuacao"><span id="labelDiaPontuacao">Hoje</span><strong><span id="admPtsHoje">0</span><small id="admPossivelHoje"> / 0 pts</small></strong></div>
                     <div class="card-pontuacao"><span>Semana</span><strong><span id="admPtsSemana">0</span><small id="admPossivelSemana"> / 0 pts</small></strong></div>
                     <div class="card-pontuacao"><span>Mês</span><strong><span id="admPtsMes">0</span><small id="admPossivelMes"> / 0 pts</small></strong></div>
                 </div>
@@ -539,6 +572,12 @@
         const mes = String(d.getMonth() + 1).padStart(2, '0');
         const dia = String(d.getDate()).padStart(2, '0');
         return `${ano}-${mes}-${dia}`;
+    }
+
+    function escaparHtml(texto) {
+        const div = document.createElement('div');
+        div.innerText = texto;
+        return div.innerHTML;
     }
 
     function obterInicioSemana(dataRef = new Date()) {
@@ -1057,37 +1096,52 @@
         selectExclusaoIntegrante.value = exclusaoIntegranteAtual;
     }
 
+    function obterDataReferenciaMonitor() {
+        const filtroDataValor = document.getElementById('filtroData').value;
+        if(filtroDataValor) {
+            const [ano, mes, dia] = filtroDataValor.split('-').map(Number);
+            return new Date(ano, mes - 1, dia);
+        }
+        return new Date();
+    }
+
     function renderizarPainelPontuacaoAdmin(historicoLista) {
         const filtroUsuario = document.getElementById('filtroIntegrante').value;
 
-        const hojeISO = formatarDataISO(new Date());
-        const inicioSemanaISO = formatarDataISO(obterInicioSemana());
-        const anoAtual = new Date().getFullYear();
-        const mesAtual = new Date().getMonth();
+        const dataReferencia = obterDataReferenciaMonitor();
+        const dataReferenciaISO = formatarDataISO(dataReferencia);
+        const inicioSemanaISO = formatarDataISO(obterInicioSemana(dataReferencia));
+        const anoRef = dataReferencia.getFullYear();
+        const mesRef = dataReferencia.getMonth();
 
-        let ganhoHoje = 0, ganhoSemana = 0, ganhoMes = 0;
+        let ganhoDia = 0, ganhoSemana = 0, ganhoMes = 0;
         historicoLista.forEach((h) => {
             if(!h.status || !h.status.includes("Prazo")) return;
             const pts = h.pontosGanhos || 0;
-            if(h.data === hojeISO) ganhoHoje += pts;
-            if(h.data >= inicioSemanaISO) ganhoSemana += pts;
+            if(h.data === dataReferenciaISO) ganhoDia += pts;
+            if(h.data >= inicioSemanaISO && h.data <= dataReferenciaISO) ganhoSemana += pts;
             const [anoH, mesH] = (h.data || "0-0-0").split('-').map(Number);
-            if(anoH === anoAtual && (mesH - 1) === mesAtual) ganhoMes += pts;
+            if(anoH === anoRef && (mesH - 1) === mesRef) ganhoMes += pts;
         });
 
         const tarefasDoIntegrante = tarefasCache.filter(t => t.perfilNome === filtroUsuario);
-        const hojeDiaTexto = diasSemana[new Date().getDay()];
+        const diaTextoRef = diasSemana[dataReferencia.getDay()];
 
-        let possivelHoje = 0, possivelSemana = 0, possivelMes = 0;
+        let possivelDia = 0, possivelSemana = 0, possivelMes = 0;
         tarefasDoIntegrante.forEach((t) => {
-            if(t.diaSemana === hojeDiaTexto) possivelHoje += t.pontosMaximos || 0;
+            if(t.diaSemana === diaTextoRef) possivelDia += t.pontosMaximos || 0;
             possivelSemana += t.pontosMaximos || 0;
-            possivelMes += (t.pontosMaximos || 0) * contarOcorrenciasNoMes(t.diaSemana, anoAtual, mesAtual);
+            possivelMes += (t.pontosMaximos || 0) * contarOcorrenciasNoMes(t.diaSemana, anoRef, mesRef);
         });
 
+        // Rótulo do primeiro card: "Hoje" quando a data escolhida é a data real de hoje, senão mostra a data escolhida
+        const ehHojeReal = formatarDataISO(new Date()) === dataReferenciaISO;
+        const labelDia = document.getElementById('labelDiaPontuacao');
+        if(labelDia) labelDia.innerText = ehHojeReal ? 'Hoje' : dataReferencia.toLocaleDateString('pt-BR');
+
         document.getElementById('nomeIntegrantePontuacao').innerText = filtroUsuario;
-        document.getElementById('admPtsHoje').innerText = ganhoHoje;
-        document.getElementById('admPossivelHoje').innerText = ` / ${possivelHoje} pts`;
+        document.getElementById('admPtsHoje').innerText = ganhoDia;
+        document.getElementById('admPossivelHoje').innerText = ` / ${possivelDia} pts`;
         document.getElementById('admPtsSemana').innerText = ganhoSemana;
         document.getElementById('admPossivelSemana').innerText = ` / ${possivelSemana} pts`;
         document.getElementById('admPtsMes').innerText = ganhoMes;
@@ -1161,7 +1215,11 @@
 
             let horariosHtml = `<strong>${t.horaSugeridaInicio} - ${t.horaSugeridaFim}</strong>`;
             if(t.horarioInicio) {
-                horariosHtml += `<div style="font-size: 11px; color: #555; margin-top: 3px;">Real: ${t.horarioInicio} até ${t.horarioTermino || '--:--'} | Tol: ${t.tempoLimite || 0} min</div>`;
+                horariosHtml += `<div style="font-size: 11px; color: #555; margin-top: 3px;">Real: ${t.horarioInicio} até ${t.horarioTermino || '--:--'} | Tol: ${t.tempoLimite || 0} min`;
+                if(statusTexto === "Atrasado" && t.justificativaAtraso) {
+                    horariosHtml += ` <span class="tooltip-justificativa">🚩 motivo<span class="tooltip-texto">${escaparHtml(t.justificativaAtraso)}</span></span>`;
+                }
+                horariosHtml += `</div>`;
             } else {
                 horariosHtml += `<div style="font-size: 11px; color: #999; margin-top: 3px;">Real: Não executada | Tol: ${t.tempoLimite || 0} min</div>`;
             }

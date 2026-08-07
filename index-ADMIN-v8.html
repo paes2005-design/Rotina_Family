@@ -581,8 +581,8 @@
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-    import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, query, where, onSnapshot, addDoc, getDocs, writeBatch, doc, deleteDoc, updateDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-    import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+    import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, query, where, onSnapshot, addDoc, getDocs, writeBatch, doc, deleteDoc, updateDoc, getDoc, deleteField } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
     const firebaseConfig = {
         apiKey: "AIzaSyCP9odEV8TJGOM4lflHk64BbPyXXVjGcYg",
@@ -596,6 +596,12 @@
     const app = initializeApp(firebaseConfig);
     const db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) });
     const auth = getAuth(app);
+
+    async function hashPin(pin) {
+        const data = new TextEncoder().encode(pin);
+        const digest = await crypto.subtle.digest('SHA-256', data);
+        return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+    }
 
     let adminLogadoAtual = null;
     let perfisCache = [];
@@ -758,11 +764,12 @@
                 await updateDoc(adminDoc.ref,{uid:cred.user.uid,authVersion:2,senha:null});
                 adminData={...adminData,uid:cred.user.uid,senha:null,authVersion:2};
             } catch(e) {
-                console.warn('Conta legada usada; habilite Email/Senha no Firebase Auth para concluir migração.',e);
+                console.error('Falha ao migrar conta legada para Firebase Authentication.',e);
+                alert('Não foi possível validar esta conta no Firebase Authentication. Redefina a senha ou atualize o cadastro administrativo.');
+                return;
             }
         }
         adminLogadoAtual={id:adminDoc.id,...adminData};
-        localStorage.setItem('adminLogado', JSON.stringify({...adminLogadoAtual, senha:undefined}));
         document.getElementById('telaAcesso').style.display='none'; document.getElementById('sistemaPrincipal').style.display='block';
         document.getElementById('displayCodigoAdmin').innerText=adminLogadoAtual.codigoAdmin || 'ADM-Gen';
         document.getElementById('displayCodigoCliente').innerText=adminLogadoAtual.codigoCliente || adminLogadoAtual.grupoId || 'CLI-Gen';
@@ -826,7 +833,6 @@
         adminLogadoAtual = null;
         perfisCache = [];
         tarefasCache = [];
-        localStorage.removeItem('adminLogado');
         document.getElementById('sistemaPrincipal').style.display = 'none';
         document.getElementById('telaAcesso').style.display = 'block';
         document.getElementById('loginEmail').value = '';
@@ -854,7 +860,8 @@
         const nomeFormatado=nome.charAt(0).toUpperCase()+nome.slice(1);
         if(perfisCache.some(p=>p.nome.toLowerCase()===nomeFormatado.toLowerCase())) return alert('Este integrante já está cadastrado.');
         const gId=adminLogadoAtual.codigoCliente || adminLogadoAtual.grupoId;
-        const ref=await addDoc(collection(db,'perfis'),{nome:nomeFormatado,sexo,grupoId:gId,pin,criadoEm:new Date().toISOString()});
+        const pinHash=await hashPin(pin);
+        const ref=await addDoc(collection(db,'perfis'),{nome:nomeFormatado,sexo,grupoId:gId,pinHash,pinVersion:2,criadoEm:new Date().toISOString()});
         await updateDoc(ref,{perfilId:ref.id});
         document.getElementById('nomeCliente').value=''; document.getElementById('pinCliente').value='';
         alert('Integrante cadastrado com PIN e ID permanente.');
@@ -1127,7 +1134,7 @@
         selects[1].innerHTML='<option value="">Todos os Integrantes</option>';
         selects[2].innerHTML='<option value="">Todos os Integrantes</option>';
         perfisCache.sort((a,b)=>a.nome.localeCompare(b.nome)).forEach(p=>{
-            const opt=`<option value="${escaparHtml(p.id)}">${escaparHtml(p.nome)} (${escaparHtml(p.sexo||'')})${p.pin?' 🔐':' ⚠️ sem PIN'}</option>`;
+            const opt=`<option value="${escaparHtml(p.id)}">${escaparHtml(p.nome)} (${escaparHtml(p.sexo||'')})${(p.pinHash||p.pin)?' 🔐':' ⚠️ sem PIN'}</option>`;
             selects[0].insertAdjacentHTML('beforeend',opt);
             selects[1].insertAdjacentHTML('beforeend',`<option value="${escaparHtml(p.id)}">${escaparHtml(p.nome)}</option>`);
             selects[2].insertAdjacentHTML('beforeend',`<option value="${escaparHtml(p.id)}">${escaparHtml(p.nome)}</option>`);
@@ -1150,9 +1157,9 @@
                 <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid #e5e7eb;flex-wrap:wrap">
                     <div>
                         <strong>${escaparHtml(p.nome || 'Integrante')}</strong>
-                        <span style="font-size:12px;margin-left:7px;color:${p.pin ? '#198754' : '#dc3545'}">${p.pin ? '🔐 PIN definido' : '⚠️ sem PIN'}</span>
+                        <span style="font-size:12px;margin-left:7px;color:${(p.pinHash||p.pin) ? '#198754' : '#dc3545'}">${(p.pinHash||p.pin) ? '🔐 PIN definido' : '⚠️ sem PIN'}</span>
                     </div>
-                    <button class="btn-action" style="width:auto;padding:7px 12px;background:#805ad5" onclick="definirPinIntegrante('${p.id}')">${p.pin ? 'Trocar PIN' : 'Definir PIN'}</button>
+                    <button class="btn-action" style="width:auto;padding:7px 12px;background:#805ad5" onclick="definirPinIntegrante('${p.id}')">${(p.pinHash||p.pin) ? 'Trocar PIN' : 'Definir PIN'}</button>
                 </div>
             `).join('');
     }
@@ -1167,8 +1174,11 @@
             alert('O PIN deve conter somente números e ter de 4 a 6 dígitos.');
             return;
         }
+        const pinHash = await hashPin(pin);
         await updateDoc(doc(db, 'perfis', perfilId), {
-            pin,
+            pinHash,
+            pinVersion: 2,
+            pin: deleteField(),
             perfilId: perfil.perfilId || perfilId,
             pinAtualizadoEm: new Date().toISOString()
         });
@@ -1356,19 +1366,33 @@
     window.decidirResgate=async(id,status)=>{ if(resgatesEmDecisao.has(id)) return; const atual=resgatesCache.find(r=>r.id===id); if(!atual||atual.status!=='Pendente') return; resgatesEmDecisao.add(id); try{ await updateDoc(doc(db,'resgates',id),{status,decididoEm:new Date().toISOString()}); } finally { resgatesEmDecisao.delete(id); } };
     function renderizarResgatesAdmin(){ const el=document.getElementById('listaResgatesAdmin'); if(!el)return; const lista=[...resgatesCache].sort((a,b)=>(b.criadoEm||'').localeCompare(a.criadoEm||'')); el.innerHTML=lista.map(r=>`<div class="resgate-item"><strong>${escaparHtml(r.perfilNome)}</strong> pediu <strong>${escaparHtml(r.recompensaNome)}</strong> (${Number(r.pontos)||0} pts) — ${escaparHtml(r.status||'Pendente')} ${r.status==='Pendente'?`<button onclick="decidirResgate('${r.id}','Aprovado')">Aprovar</button> <button onclick="decidirResgate('${r.id}','Recusado')">Recusar</button>`:''}</div>`).join('')||'<p>Nenhum pedido.</p>'; }
 
-    // Auto-Login ao carregar a página se houver sessão salva
-    const savedAdmin = localStorage.getItem('adminLogado');
-    if (savedAdmin) {
-        adminLogadoAtual = JSON.parse(savedAdmin);
-        document.getElementById('telaAcesso').style.display = 'none';
-        document.getElementById('sistemaPrincipal').style.display = 'block';
-        
-        document.getElementById('displayCodigoAdmin').innerText = adminLogadoAtual.codigoAdmin || "ADM-Gen";
-        document.getElementById('displayCodigoCliente').innerText = adminLogadoAtual.codigoCliente || adminLogadoAtual.grupoId || "CLI-Gen";
-
-        verificarEExecutarResetSemanal(adminLogadoAtual.codigoCliente || adminLogadoAtual.grupoId);
-        iniciarEscutasFirebase();
-    }
+    // Sessão administrativa validada pelo Firebase Authentication.
+    onAuthStateChanged(auth, async (user) => {
+        if(!user) {
+            if(!adminLogadoAtual) {
+                document.getElementById('sistemaPrincipal').style.display='none';
+                document.getElementById('telaAcesso').style.display='block';
+            }
+            return;
+        }
+        if(adminLogadoAtual?.uid === user.uid) return;
+        try {
+            const snap = await getDocs(query(collection(db,'administradores'), where('uid','==',user.uid)));
+            if(snap.empty) {
+                await signOut(auth);
+                alert('Sessão autenticada sem cadastro administrativo correspondente.');
+                return;
+            }
+            const adminDoc=snap.docs[0];
+            adminLogadoAtual={id:adminDoc.id,...adminDoc.data()};
+            document.getElementById('telaAcesso').style.display='none';
+            document.getElementById('sistemaPrincipal').style.display='block';
+            document.getElementById('displayCodigoAdmin').innerText=adminLogadoAtual.codigoAdmin || 'ADM-Gen';
+            document.getElementById('displayCodigoCliente').innerText=adminLogadoAtual.codigoCliente || adminLogadoAtual.grupoId || 'CLI-Gen';
+            await verificarEExecutarResetSemanal(adminLogadoAtual.codigoCliente || adminLogadoAtual.grupoId);
+            iniciarEscutasFirebase();
+        } catch(e) { console.error('Falha ao restaurar sessão administrativa',e); }
+    });
 </script>
 <script>
   if ('serviceWorker' in navigator) {

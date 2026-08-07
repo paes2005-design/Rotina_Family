@@ -1,0 +1,49 @@
+name: Apply security fixes
+on:
+  push:
+    paths:
+      - .github/workflows/apply-security-fixes.yml
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch ADM
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('index-ADMIN-v8.html')
+          s=p.read_text()
+          s=s.replace('import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, query, where, onSnapshot, addDoc, getDocs, writeBatch, doc, deleteDoc, updateDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";','import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, query, where, onSnapshot, addDoc, getDocs, writeBatch, doc, deleteDoc, updateDoc, getDoc, deleteField } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";')
+          s=s.replace('import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";','import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";')
+          s=s.replace('    const auth = getAuth(app);\n','''    const auth = getAuth(app);\n\n    async function hashPin(pin) {\n        const data = new TextEncoder().encode(pin);\n        const digest = await crypto.subtle.digest('SHA-256', data);\n        return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');\n    }\n''')
+          s=s.replace("        localStorage.setItem('adminLogado', JSON.stringify({...adminLogadoAtual, senha:undefined}));\n",'')
+          s=s.replace("        localStorage.removeItem('adminLogado');\n",'')
+          s=s.replace("        const ref=await addDoc(collection(db,'perfis'),{nome:nomeFormatado,sexo,grupoId:gId,pin,criadoEm:new Date().toISOString()});","        const pinHash=await hashPin(pin);\n        const ref=await addDoc(collection(db,'perfis'),{nome:nomeFormatado,sexo,grupoId:gId,pinHash,pinVersion:2,criadoEm:new Date().toISOString()});")
+          s=s.replace("${p.pin?' 🔐':' ⚠️ sem PIN'}","${(p.pinHash||p.pin)?' 🔐':' ⚠️ sem PIN'}")
+          s=s.replace("${p.pin ? '#198754' : '#dc3545'}","${(p.pinHash||p.pin) ? '#198754' : '#dc3545'}")
+          s=s.replace("${p.pin ? '🔐 PIN definido' : '⚠️ sem PIN'}","${(p.pinHash||p.pin) ? '🔐 PIN definido' : '⚠️ sem PIN'}")
+          s=s.replace("${p.pin ? 'Trocar PIN' : 'Definir PIN'}","${(p.pinHash||p.pin) ? 'Trocar PIN' : 'Definir PIN'}")
+          s=s.replace("""        await updateDoc(doc(db, 'perfis', perfilId), {\n            pin,\n            perfilId: perfil.perfilId || perfilId,\n            pinAtualizadoEm: new Date().toISOString()\n        });""","""        const pinHash = await hashPin(pin);\n        await updateDoc(doc(db, 'perfis', perfilId), {\n            pinHash,\n            pinVersion: 2,\n            pin: deleteField(),\n            perfilId: perfil.perfilId || perfilId,\n            pinAtualizadoEm: new Date().toISOString()\n        });""")
+          marker='    // Auto-Login ao carregar a página se houver sessão salva'
+          if marker in s:
+              start=s.index(marker)
+              end=s.index('</script>',start)
+              block='''    // Sessão administrativa validada pelo Firebase Authentication.\n    onAuthStateChanged(auth, async (user) => {\n        if(!user) {\n            if(!adminLogadoAtual) {\n                document.getElementById('sistemaPrincipal').style.display='none';\n                document.getElementById('telaAcesso').style.display='block';\n            }\n            return;\n        }\n        if(adminLogadoAtual?.uid === user.uid) return;\n        try {\n            const snap = await getDocs(query(collection(db,'administradores'), where('uid','==',user.uid)));\n            if(snap.empty) {\n                await signOut(auth);\n                alert('Sessão autenticada sem cadastro administrativo correspondente.');\n                return;\n            }\n            const adminDoc=snap.docs[0];\n            adminLogadoAtual={id:adminDoc.id,...adminDoc.data()};\n            document.getElementById('telaAcesso').style.display='none';\n            document.getElementById('sistemaPrincipal').style.display='block';\n            document.getElementById('displayCodigoAdmin').innerText=adminLogadoAtual.codigoAdmin || 'ADM-Gen';\n            document.getElementById('displayCodigoCliente').innerText=adminLogadoAtual.codigoCliente || adminLogadoAtual.grupoId || 'CLI-Gen';\n            await verificarEExecutarResetSemanal(adminLogadoAtual.codigoCliente || adminLogadoAtual.grupoId);\n            iniciarEscutasFirebase();\n        } catch(e) { console.error('Falha ao restaurar sessão administrativa',e); }\n    });\n'''
+              s=s[:start]+block+s[end:]
+          assert 'onAuthStateChanged' in s
+          assert 'pinHash' in s and 'deleteField' in s
+          assert "localStorage.setItem('adminLogado'" not in s
+          p.write_text(s)
+          PY
+      - name: Commit ADM fixes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index-ADMIN-v8.html
+          git commit -m "Harden admin session and profile PIN security"
+          git push

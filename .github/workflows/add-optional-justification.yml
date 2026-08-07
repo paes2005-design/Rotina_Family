@@ -1,0 +1,38 @@
+name: Add optional justification policy
+on:
+  push:
+    paths:
+      - .github/workflows/add-optional-justification.yml
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch ADM
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('index-ADMIN-v8.html')
+          s=p.read_text()
+          s=s.replace('''                <div class="form-group">\n                    <label for="pontosMeta">Pontos Máximos:</label>\n                    <input type="text" id="pontosMeta" value="20">\n                </div>''','''                <div class="form-group">\n                    <label for="pontosMeta">Pontos Máximos:</label>\n                    <input type="text" id="pontosMeta" value="20">\n                </div>\n                <div class="form-group">\n                    <label for="justificativaObrigatoria">Justificativa em caso de atraso:</label>\n                    <select id="justificativaObrigatoria">\n                        <option value="sim" selected>Obrigatória</option>\n                        <option value="nao">Opcional</option>\n                    </select>\n                    <small style="color:#777">Se for opcional, o integrante poderá escolher se deseja justificar o atraso.</small>\n                </div>''')
+          s=s.replace("const pontosMax = parseFloat(document.getElementById('pontosMeta').value) || 0;","const pontosMax = parseFloat(document.getElementById('pontosMeta').value) || 0;\n        const justificativaObrigatoria = document.getElementById('justificativaObrigatoria').value !== 'nao';")
+          s=s.replace("pontosMaximos: pontosMax\n                        });","pontosMaximos: pontosMax,\n                            justificativaObrigatoria\n                        });")
+          s=s.replace("pontosMaximos: pontosMax,\n                            status: \"Pendente\",","pontosMaximos: pontosMax,\n                            justificativaObrigatoria,\n                            status: \"Pendente\",")
+          s=s.replace("pontosMaximos: pontosMax,\n                    status: \"Pendente\",","pontosMaximos: pontosMax,\n                    justificativaObrigatoria,\n                    status: \"Pendente\",")
+          s=s.replace("document.getElementById('pontosMeta').value = t.pontosMaximos || 0;","document.getElementById('pontosMeta').value = t.pontosMaximos || 0;\n        document.getElementById('justificativaObrigatoria').value = t.justificativaObrigatoria === false ? 'nao' : 'sim';")
+          s=s.replace("document.getElementById('pontosMeta').value = '20';","document.getElementById('pontosMeta').value = '20';\n        document.getElementById('justificativaObrigatoria').value = 'sim';")
+          s=s.replace("if(statusTexto === \"Atrasado\" && t.justificativaAtraso) { horariosHtml += ` <span class=\"tooltip-justificativa\">🚩 texto<span class=\"tooltip-texto\">${escaparHtml(t.justificativaAtraso)}</span></span>`; }","if(statusTexto === \"Atrasado\" && t.justificativaAtraso) { horariosHtml += ` <span class=\"tooltip-justificativa\">🚩 texto<span class=\"tooltip-texto\">${escaparHtml(t.justificativaAtraso)}</span></span>`; }\n                if(statusTexto === \"Atrasado\" && t.justificativaRecusada === true) { horariosHtml += ` <span class=\"tooltip-justificativa\" style=\"color:#6c757d;border-color:#6c757d\">Sem justificativa<span class=\"tooltip-texto\">Usuário não quis justificar.</span></span>`; }")
+          p.write_text(s)
+          PY
+      - name: Commit
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index-ADMIN-v8.html
+          git commit -m "Make delay justification configurable by admin"
+          git pull --rebase origin main
+          git push

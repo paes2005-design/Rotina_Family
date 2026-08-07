@@ -537,10 +537,10 @@
             <table>
                 <thead>
                     <tr>
+                        <th>Início / Fim (Sugerido vs Real)</th>
                         <th>Tarefa</th>
                         <th>Integrante</th>
                         <th>Dia da Semana</th>
-                        <th>Início / Fim (Sugerido vs Real)</th>
                         <th>Status</th>
                         <th>Pontos</th>
                     </tr>
@@ -1298,10 +1298,10 @@
 
             tbody.innerHTML += `
                 <tr>
+                    <td>${horariosHtml}</td>
                     <td><strong>${escaparHtml(t.nome)}</strong></td>
                     <td>${escaparHtml(t.perfilNome)}</td>
                     <td>${escaparHtml(t.diaSemana)}</td>
-                    <td>${horariosHtml}</td>
                     <td><span class="badge ${badgeClass}">${escaparHtml(statusTexto)}</span></td>
                     <td>${t.pontosGanhos || 0} / ${t.pontosMaximos} pts</td>
                 </tr>

@@ -556,12 +556,15 @@
 
         <div id="dashboard" class="tab-content">
             <h2>Dashboard Familiar</h2>
-            <p style="color:#666">Visão consolidada da semana, ranking, sequências e conquistas.</p>
-            <div id="dashboardFamilia" class="dash-cards-admin"></div>
-            <div style="margin-top:25px">
-                <h3>Ranking da Semana</h3>
-                <div id="rankingFamilia"></div>
+            <p style="color:#666">Visão consolidada da família por dia, semana e mês.</p>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:15px 0">
+                <div><label for="dashboardDataRef">Data de referência</label><input type="date" id="dashboardDataRef" onchange="renderizarDashboard()"></div>
+                <div><label for="dashboardPerfil">Filtrar integrante</label><select id="dashboardPerfil" onchange="renderizarDashboard()"><option value="">Todos</option></select></div>
             </div>
+            <div id="dashboardFamilia" class="dash-cards-admin"></div>
+            <div style="margin-top:25px"><h3>Ranking Diário</h3><div id="rankingDiario"></div></div>
+            <div style="margin-top:25px"><h3>Ranking Semanal</h3><div id="rankingFamilia"></div></div>
+            <div style="margin-top:25px"><h3>Ranking Mensal</h3><div id="rankingMensal"></div></div>
         </div>
 
         <div id="recompensas" class="tab-content">
@@ -578,7 +581,7 @@
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-    import { getFirestore, collection, query, where, onSnapshot, addDoc, getDocs, writeBatch, doc, deleteDoc, updateDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+    import { initializeFirestore, persistentLocalCache, persistentMultipleTabManager, collection, query, where, onSnapshot, addDoc, getDocs, writeBatch, doc, deleteDoc, updateDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
     import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, signOut } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
 
     const firebaseConfig = {
@@ -591,7 +594,7 @@
     };
 
     const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
+    const db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) });
     const auth = getAuth(app);
 
     let adminLogadoAtual = null;
@@ -612,6 +615,8 @@
     const diasSemana = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
 
     document.getElementById('filtroData').valueAsDate = new Date();
+    const dashData=document.getElementById('dashboardDataRef'); if(dashData) dashData.value=formatarDataISO(new Date());
+
 
     function formatarDataISO(d) {
         const ano = d.getFullYear();
@@ -667,7 +672,9 @@
                             horarioInicio: "",
                             horarioTermino: "",
                             pontosGanhos: 0,
-                            iniciouComAtraso: false
+                            iniciouComAtraso: false,
+                            justificativaAtraso: "",
+                            tipoJustificativa: ""
                         });
                     }
                 });
@@ -959,7 +966,9 @@
                             pontosGanhos: 0,
                             horarioInicio: "",
                             horarioTermino: "",
-                            iniciouComAtraso: false
+                            iniciouComAtraso: false,
+                            justificativaAtraso: "",
+                            tipoJustificativa: ""
                         });
                     }
                 } else {
@@ -1316,22 +1325,35 @@
         for(let i=0;i<60;i++){ const iso=formatarDataISO(d); if(datas.has(iso)) seq++; else if(i>0) break; d.setDate(d.getDate()-1); }
         return seq;
     }
-    function renderizarDashboard(){
-        const box=document.getElementById('dashboardFamilia'), ranking=document.getElementById('rankingFamilia'); if(!box||!ranking) return;
-        const ini=inicioSemanaISO();
-        const dados=perfisCache.map(p=>{
-            const hs=historicoGrupoCache.filter(h=>(h.perfilId===p.id||(!h.perfilId&&h.perfilNome===p.nome)) && h.data>=ini);
-            const pontos=hs.reduce((s,h)=>s+(Number(h.pontosGanhos)||0),0);
-            const concluidas=hs.length, prazo=hs.filter(h=>h.status?.includes('Prazo')).length;
-            return {p,pontos,concluidas,prazo,seq:calcularSequencia(p)};
-        }).sort((a,b)=>b.pontos-a.pontos);
-        box.innerHTML=dados.map(x=>`<div class="card-pontuacao"><span>${escaparHtml(x.p.nome)}</span><strong>${x.pontos} pts</strong><small style="display:block;margin-top:6px">✅ ${x.prazo}/${x.concluidas} no prazo · 🔥 ${x.seq} dias</small></div>`).join('') || '<p>Nenhum integrante.</p>';
-        ranking.innerHTML=dados.map((x,i)=>`<div class="ranking-item"><strong>${i+1}º ${escaparHtml(x.p.nome)}</strong> — ${x.pontos} pts ${x.seq>=7?'🏅 Persistente':''}${x.pontos>=1000?' ⭐ Mil pontos':''}</div>`).join('');
+    window.renderizarDashboard = function(){
+        const box=document.getElementById('dashboardFamilia'), semanal=document.getElementById('rankingFamilia'), diario=document.getElementById('rankingDiario'), mensal=document.getElementById('rankingMensal');
+        if(!box||!semanal||!diario||!mensal) return;
+        const dataEl=document.getElementById('dashboardDataRef');
+        if(dataEl && !dataEl.value) dataEl.value=formatarDataISO(new Date());
+        const ref=new Date((dataEl?.value||formatarDataISO(new Date()))+'T12:00:00');
+        const diaISO=formatarDataISO(ref);
+        const iniSem=formatarDataISO(obterInicioSemana(ref));
+        const fimSemD=new Date(obterInicioSemana(ref)); fimSemD.setDate(fimSemD.getDate()+6); const fimSem=formatarDataISO(fimSemD);
+        const iniMes=`${ref.getFullYear()}-${String(ref.getMonth()+1).padStart(2,'0')}-01`;
+        const fimMes=formatarDataISO(new Date(ref.getFullYear(),ref.getMonth()+1,0));
+        const filtro=document.getElementById('dashboardPerfil');
+        if(filtro){ const atual=filtro.value; filtro.innerHTML='<option value="">Todos</option>'+perfisCache.map(p=>`<option value="${escaparHtml(p.id)}">${escaparHtml(p.nome)}</option>`).join(''); filtro.value=atual; }
+        const perfis=perfisCache.filter(p=>!filtro?.value||p.id===filtro.value);
+        const dados=perfis.map(p=>{
+            const hist=historicoGrupoCache.filter(h=>(h.perfilId===p.id||(!h.perfilId&&h.perfilNome===p.nome)));
+            const soma=(ini,fim)=>hist.filter(h=>h.data>=ini&&h.data<=fim).reduce((s,h)=>s+(Number(h.pontosGanhos)||0),0);
+            const hs=hist.filter(h=>h.data>=iniSem&&h.data<=fimSem);
+            return {p,diario:soma(diaISO,diaISO),semanal:soma(iniSem,fimSem),mensal:soma(iniMes,fimMes),concluidas:hs.length,prazo:hs.filter(h=>h.status?.includes('Prazo')).length,seq:calcularSequencia(p)};
+        });
+        box.innerHTML=dados.map(x=>`<div class="card-pontuacao"><span>${escaparHtml(x.p.nome)}</span><strong>${x.semanal} pts</strong><small style="display:block;margin-top:6px">Hoje ${x.diario} · Mês ${x.mensal}<br>✅ ${x.prazo}/${x.concluidas} no prazo · 🔥 ${x.seq} dias</small></div>`).join('')||'<p>Nenhum integrante.</p>';
+        const render=(campo,el)=>{ const ord=[...dados].sort((x,y)=>y[campo]-x[campo]); el.innerHTML=ord.map((x,i)=>`<div class="ranking-item"><strong>${i+1}º ${escaparHtml(x.p.nome)}</strong> — ${x[campo]} pts</div>`).join('')||'<p>Sem dados no período.</p>'; };
+        render('diario',diario); render('semanal',semanal); render('mensal',mensal);
     }
     window.salvarRecompensa=async()=>{ const nome=document.getElementById('recompensaNome').value.trim(); const pontos=Number(document.getElementById('recompensaPontos').value); if(!nome||pontos<=0)return alert('Informe recompensa e pontos.'); const grupoId=adminLogadoAtual.codigoCliente||adminLogadoAtual.grupoId; await addDoc(collection(db,'recompensas'),{grupoId,nome,pontos,ativa:true,criadoEm:new Date().toISOString()}); document.getElementById('recompensaNome').value=''; document.getElementById('recompensaPontos').value=''; };
     window.excluirRecompensa=async id=>{ if(confirm('Excluir recompensa?')) await deleteDoc(doc(db,'recompensas',id)); };
     function renderizarRecompensasAdmin(){ const el=document.getElementById('listaRecompensasAdmin'); if(!el)return; el.innerHTML=recompensasCache.map(r=>`<div class="recompensa-item"><strong>${escaparHtml(r.nome)}</strong> — ${Number(r.pontos)||0} pts <button onclick="excluirRecompensa('${r.id}')">Excluir</button></div>`).join('')||'<p>Nenhuma recompensa.</p>'; }
-    window.decidirResgate=async(id,status)=>{ await updateDoc(doc(db,'resgates',id),{status,decididoEm:new Date().toISOString()}); };
+    const resgatesEmDecisao=new Set();
+    window.decidirResgate=async(id,status)=>{ if(resgatesEmDecisao.has(id)) return; const atual=resgatesCache.find(r=>r.id===id); if(!atual||atual.status!=='Pendente') return; resgatesEmDecisao.add(id); try{ await updateDoc(doc(db,'resgates',id),{status,decididoEm:new Date().toISOString()}); } finally { resgatesEmDecisao.delete(id); } };
     function renderizarResgatesAdmin(){ const el=document.getElementById('listaResgatesAdmin'); if(!el)return; const lista=[...resgatesCache].sort((a,b)=>(b.criadoEm||'').localeCompare(a.criadoEm||'')); el.innerHTML=lista.map(r=>`<div class="resgate-item"><strong>${escaparHtml(r.perfilNome)}</strong> pediu <strong>${escaparHtml(r.recompensaNome)}</strong> (${Number(r.pontos)||0} pts) — ${escaparHtml(r.status||'Pendente')} ${r.status==='Pendente'?`<button onclick="decidirResgate('${r.id}','Aprovado')">Aprovar</button> <button onclick="decidirResgate('${r.id}','Recusado')">Recusar</button>`:''}</div>`).join('')||'<p>Nenhum pedido.</p>'; }
 
     // Auto-Login ao carregar a página se houver sessão salva

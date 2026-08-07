@@ -498,9 +498,9 @@
                 <table>
                     <thead>
                         <tr>
+                            <th>Horário Sugerido</th>
                             <th>Tarefa</th>
                             <th>Integrante</th>
-                            <th>Horário Sugerido</th>
                             <th>Ações</th>
                         </tr>
                     </thead>
@@ -1133,9 +1133,9 @@
         tarefasFiltradas.forEach(t => {
             tbody.innerHTML += `
                 <tr>
+                    <td>${t.horaSugeridaInicio} às ${t.horaSugeridaFim}</td>
                     <td><strong>${escaparHtml(t.nome)}</strong></td>
                     <td>${escaparHtml(t.perfilNome)}</td>
-                    <td>${t.horaSugeridaInicio} às ${t.horaSugeridaFim}</td>
                     <td>
                         <div style="display: flex; gap: 5px;">
                             <button class="btn-action" style="background-color: var(--primary); padding: 6px 10px; font-size: 12px; width: auto;" onclick="preencherEdicaoTarefa('${t.id}')">Editar</button>

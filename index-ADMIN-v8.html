@@ -1329,7 +1329,7 @@
             if(t.horarioInicio) {
                 horariosHtml += `<div style="font-size: 11px; color: #555; margin-top: 3px;">Real: ${t.horarioInicio} até ${t.horarioTermino || '--:--'} | Tol: ${t.tempoLimite || 0} min`;
                 if(statusTexto === "Atrasado" && t.justificativaAtraso) { horariosHtml += ` <span class="tooltip-justificativa">🚩 texto<span class="tooltip-texto">${escaparHtml(t.justificativaAtraso)}</span></span>`; }
-                if(statusTexto === "Atrasado" && t.justificativaRecusada === true) { horariosHtml += ` <span class="tooltip-justificativa" style="color:#6c757d;border-color:#6c757d">Sem justificativa<span class="tooltip-texto">Usuário não quis justificar.</span></span>`; }
+                if(statusTexto === "Atrasado" && t.justificativaRecusada === true) { horariosHtml += ` <span class="tooltip-justificativa" style="color:#6c757d;border-color:#6c757d">Usuário não quis justificar<span class="tooltip-texto">Usuário não quis justificar.</span></span>`; }
                 if(statusTexto === "Atrasado" && t.tipoJustificativa === 'voz-transcrita') { horariosHtml += ` <span title="Justificativa ditada por voz e convertida em texto">🎙️ voz→texto</span>`; }
                 horariosHtml += `</div>`;
             } else {

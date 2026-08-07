@@ -458,6 +458,14 @@
                     <label for="pontosMeta">Pontos Máximos:</label>
                     <input type="text" id="pontosMeta" value="20">
                 </div>
+                <div class="form-group">
+                    <label for="justificativaObrigatoria">Justificativa em caso de atraso:</label>
+                    <select id="justificativaObrigatoria">
+                        <option value="sim" selected>Obrigatória</option>
+                        <option value="nao">Opcional</option>
+                    </select>
+                    <small style="color:#777">Se for opcional, o integrante poderá escolher se deseja justificar o atraso.</small>
+                </div>
                 <div style="display: flex; gap: 10px;">
                     <button class="btn-action" id="btnSalvarTarefa" onclick="salvarTarefa()" style="width: auto;">Salvar Tarefa</button>
                     <button class="btn-action" id="btnCancelarEdicao" onclick="cancelarEdicaoTarefa()" style="width: auto; background-color: #6c757d; display: none;">Cancelar Edição</button>
@@ -883,6 +891,7 @@
         const horaFim = document.getElementById('horarioFimSugerido').value;
         const tolerancia = parseInt(document.getElementById('toleranciaTarefa').value) || 0;
         const pontosMax = parseFloat(document.getElementById('pontosMeta').value) || 0;
+        const justificativaObrigatoria = document.getElementById('justificativaObrigatoria').value !== 'nao';
 
         let clienteExiste = !!perfilSelecionado;
         if(!perfilIdSelecionado || !clienteExiste) {
@@ -955,7 +964,8 @@
                             horaSugeridaInicio: horaInicio,
                             horaSugeridaFim: horaFim,
                             tempoLimite: tolerancia,
-                            pontosMaximos: pontosMax
+                            pontosMaximos: pontosMax,
+                            justificativaObrigatoria
                         });
                         // Remove duplicatas extras caso já existissem anteriormente no mesmo dia
                         for (let i = 1; i < tarefasDoDia.length; i++) {
@@ -975,6 +985,7 @@
                             diaSemana: dia,
                             tempoLimite: tolerancia,
                             pontosMaximos: pontosMax,
+                            justificativaObrigatoria,
                             status: "Pendente",
                             pontosGanhos: 0,
                             horarioInicio: "",
@@ -1025,6 +1036,7 @@
                     diaSemana: dia,
                     tempoLimite: tolerancia,
                     pontosMaximos: pontosMax,
+                    justificativaObrigatoria,
                     status: "Pendente",
                     pontosGanhos: 0,
                     horarioInicio: "",
@@ -1051,6 +1063,7 @@
         document.getElementById('horarioFimSugerido').value = t.horaSugeridaFim;
         document.getElementById('toleranciaTarefa').value = t.tempoLimite || 0;
         document.getElementById('pontosMeta').value = t.pontosMaximos || 0;
+        document.getElementById('justificativaObrigatoria').value = t.justificativaObrigatoria === false ? 'nao' : 'sim';
 
         // Marca automaticamente os dias que essa tarefa já possui no banco
         const tarefasRelacionadas = tarefasCache.filter(item => t.tarefaGrupoId ? item.tarefaGrupoId === t.tarefaGrupoId : (item.nome === t.nome && item.perfilNome === t.perfilNome));
@@ -1075,6 +1088,7 @@
         document.getElementById('horarioFimSugerido').value = '08:30';
         document.getElementById('toleranciaTarefa').value = '10';
         document.getElementById('pontosMeta').value = '20';
+        document.getElementById('justificativaObrigatoria').value = 'sim';
         document.querySelectorAll('.dia-semana-check').forEach(cb => cb.checked = false);
 
         document.getElementById('tituloFormTarefa').innerText = "Cadastrar Meta / Tarefa";
@@ -1315,6 +1329,7 @@
             if(t.horarioInicio) {
                 horariosHtml += `<div style="font-size: 11px; color: #555; margin-top: 3px;">Real: ${t.horarioInicio} até ${t.horarioTermino || '--:--'} | Tol: ${t.tempoLimite || 0} min`;
                 if(statusTexto === "Atrasado" && t.justificativaAtraso) { horariosHtml += ` <span class="tooltip-justificativa">🚩 texto<span class="tooltip-texto">${escaparHtml(t.justificativaAtraso)}</span></span>`; }
+                if(statusTexto === "Atrasado" && t.justificativaRecusada === true) { horariosHtml += ` <span class="tooltip-justificativa" style="color:#6c757d;border-color:#6c757d">Sem justificativa<span class="tooltip-texto">Usuário não quis justificar.</span></span>`; }
                 if(statusTexto === "Atrasado" && t.tipoJustificativa === 'voz-transcrita') { horariosHtml += ` <span title="Justificativa ditada por voz e convertida em texto">🎙️ voz→texto</span>`; }
                 horariosHtml += `</div>`;
             } else {

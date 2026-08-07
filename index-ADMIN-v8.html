@@ -790,6 +790,12 @@
         const qPerfis = query(collection(db, "perfis"), where("grupoId", "==", gId));
         unsubscribePerfis = onSnapshot(qPerfis, async (snapshot) => {
             perfisCache = snapshot.docs.map(d => ({ id: d.id, perfilId: d.data().perfilId || d.id, ...d.data() }));
+            for (const perfil of perfisCache) {
+                if (perfil.pin && !perfil.pinHash) {
+                    const pinHash = await hashPin(String(perfil.pin));
+                    updateDoc(doc(db,'perfis',perfil.id),{pinHash,pinVersion:2,pin:deleteField(),pinMigradoEm:new Date().toISOString()}).catch(console.error);
+                }
+            }
             atualizarSelects();
             migrarTarefasLegadas().catch(console.error);
         });

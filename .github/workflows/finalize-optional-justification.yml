@@ -1,0 +1,41 @@
+name: Finalize optional justification admin behavior
+on:
+  push:
+    paths:
+      - .github/workflows/finalize-optional-justification.yml
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch ADM
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('index-ADMIN-v8.html')
+          s=p.read_text()
+          s=s.replace("tipoJustificativa: \"\"\n                            });","tipoJustificativa: \"\",\n                                justificativaRecusada: false\n                            });")
+          s=s.replace("horariosHtml += ` <span class=\"tooltip-justificativa\" style=\"color:#6c757d;border-color:#6c757d\">Sem justificativa<span class=\"tooltip-texto\">Usuário não quis justificar.</span></span>`;","horariosHtml += ` <span class=\"tooltip-justificativa\" style=\"color:#6c757d;border-color:#6c757d\">Usuário não quis justificar<span class=\"tooltip-texto\">Usuário não quis justificar.</span></span>`;")
+          p.write_text(s)
+          PY
+      - name: Syntax check and commit
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          s=Path('index-ADMIN-v8.html').read_text()
+          scripts=re.findall(r'<script type="module">(.*?)</script>',s,re.S)
+          assert scripts
+          Path('/tmp/admin.js').write_text(scripts[0])
+          PY
+          node --check /tmp/admin.js
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index-ADMIN-v8.html
+          git commit -m "Finalize optional justification admin flow"
+          git pull --rebase origin main
+          git push

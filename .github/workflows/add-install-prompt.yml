@@ -10,52 +10,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Patch ADM install prompt
+      - name: Patch ADM
         shell: bash
         run: |
           python - <<'PY'
           from pathlib import Path
+          import base64
           p=Path('index-ADMIN-v8.html')
           s=p.read_text()
-          marker='</body>'
-          assert marker in s
+          payload='PGRpdiBpZD0icHdhSW5zdGFsbEJhbm5lciIgc3R5bGU9ImRpc3BsYXk6bm9uZTtwb3NpdGlvbjpmaXhlZDtsZWZ0OjE2cHg7cmlnaHQ6MTZweDtib3R0b206MThweDt6LWluZGV4Ojk5OTk7YmFja2dyb3VuZDojZmZmO2JvcmRlcjoxcHggc29saWQgI2Q3ZTNmMDtib3JkZXItcmFkaXVzOjE2cHg7Ym94LXNoYWRvdzowIDhweCAyOHB4IHJnYmEoMCwwLDAsLjE4KTtwYWRkaW5nOjE0cHggMTZweDttYXgtd2lkdGg6NTIwcHg7bWFyZ2luOmF1dG87Zm9udC1mYW1pbHk6aW5oZXJpdCI+CiAgPGRpdiBzdHlsZT0iZGlzcGxheTpmbGV4O2FsaWduLWl0ZW1zOmNlbnRlcjtnYXA6MTJweCI+CiAgICA8aW1nIHNyYz0iaWNvbi1hZG1pbmlzdHJhZG9yLTE5Mi5wbmciIGFsdD0iw41jb25lIiB3aWR0aD0iNDgiIGhlaWdodD0iNDgiIHN0eWxlPSJib3JkZXItcmFkaXVzOjEycHgiPgogICAgPGRpdiBzdHlsZT0iZmxleDoxIj48c3Ryb25nIHN0eWxlPSJkaXNwbGF5OmJsb2NrO2NvbG9yOiMyNTQ3NkEiPkluc3RhbGFyIFJvdGluYSBGYW1pbHkgQURNPC9zdHJvbmc+PHNtYWxsIGlkPSJwd2FJbnN0YWxsVGV4dG8iIHN0eWxlPSJjb2xvcjojNjY2Ij5JbnN0YWxlIHBhcmEgYWNlc3NhciBtYWlzIHLDoXBpZG8gZSB1c2FyIHJlY3Vyc29zIG9mZmxpbmUuPC9zbWFsbD48L2Rpdj4KICAgIDxidXR0b24gaWQ9InB3YUluc3RhbGxCdG4iIHN0eWxlPSJib3JkZXI6MDtiYWNrZ3JvdW5kOiM0YTkwZTI7Y29sb3I6I2ZmZjtib3JkZXItcmFkaXVzOjEwcHg7cGFkZGluZzo5cHggMTJweDtmb250LXdlaWdodDo3MDA7Y3Vyc29yOnBvaW50ZXIiPkluc3RhbGFyPC9idXR0b24+CiAgICA8YnV0dG9uIGlkPSJwd2FJbnN0YWxsRmVjaGFyIiBhcmlhLWxhYmVsPSJGZWNoYXIiIHN0eWxlPSJib3JkZXI6MDtiYWNrZ3JvdW5kOnRyYW5zcGFyZW50O2ZvbnQtc2l6ZToyMHB4O2N1cnNvcjpwb2ludGVyO2NvbG9yOiM3NzciPsOXPC9idXR0b24+CiAgPC9kaXY+CjwvZGl2Pgo8c2NyaXB0PgooKCkgPT4gewogIGxldCBkZWZlcnJlZFByb21wdD1udWxsOwogIGNvbnN0IGJhbm5lcj1kb2N1bWVudC5nZXRFbGVtZW50QnlJZCgncHdhSW5zdGFsbEJhbm5lcicpOwogIGNvbnN0IGJ0bj1kb2N1bWVudC5nZXRFbGVtZW50QnlJZCgncHdhSW5zdGFsbEJ0bicpOwogIGNvbnN0IGZlY2hhcj1kb2N1bWVudC5nZXRFbGVtZW50QnlJZCgncHdhSW5zdGFsbEZlY2hhcicpOwogIGNvbnN0IHRleHRvPWRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCdwd2FJbnN0YWxsVGV4dG8nKTsKICBjb25zdCBzdGFuZGFsb25lPXdpbmRvdy5tYXRjaE1lZGlhKCcoZGlzcGxheS1tb2RlOiBzdGFuZGFsb25lKScpLm1hdGNoZXMgfHwgd2luZG93Lm5hdmlnYXRvci5zdGFuZGFsb25lPT09dHJ1ZTsKICBjb25zdCBkaXNwZW5zYWRvPXNlc3Npb25TdG9yYWdlLmdldEl0ZW0oJ3B3YUluc3RhbGxEaXNtaXNzZWQnKT09PScxJzsKICBpZihzdGFuZGFsb25lIHx8IGRpc3BlbnNhZG8pIHJldHVybjsKICB3aW5kb3cuYWRkRXZlbnRMaXN0ZW5lcignYmVmb3JlaW5zdGFsbHByb21wdCcsIGUgPT4gewogICAgZS5wcmV2ZW50RGVmYXVsdCgpOyBkZWZlcnJlZFByb21wdD1lOyBiYW5uZXIuc3R5bGUuZGlzcGxheT0nYmxvY2snOwogIH0pOwogIGJ0bi5hZGRFdmVudExpc3RlbmVyKCdjbGljaycsIGFzeW5jICgpID0+IHsKICAgIGlmKGRlZmVycmVkUHJvbXB0KXsgZGVmZXJyZWRQcm9tcHQucHJvbXB0KCk7IGF3YWl0IGRlZmVycmVkUHJvbXB0LnVzZXJDaG9pY2U7IGRlZmVycmVkUHJvbXB0PW51bGw7IGJhbm5lci5zdHlsZS5kaXNwbGF5PSdub25lJzsgcmV0dXJuOyB9CiAgICBjb25zdCBpb3M9L2lwaG9uZXxpcGFkfGlwb2QvaS50ZXN0KG5hdmlnYXRvci51c2VyQWdlbnQpOwogICAgaWYoaW9zKXsgdGV4dG8udGV4dENvbnRlbnQ9J05vIFNhZmFyaTogdG9xdWUgZW0gQ29tcGFydGlsaGFyIGUgZGVwb2lzIGVtICJBZGljaW9uYXIgw6AgVGVsYSBkZSBJbsOtY2lvIi4nOyBidG4uc3R5bGUuZGlzcGxheT0nbm9uZSc7IH0KICB9KTsKICBmZWNoYXIuYWRkRXZlbnRMaXN0ZW5lcignY2xpY2snLCgpPT57IGJhbm5lci5zdHlsZS5kaXNwbGF5PSdub25lJzsgc2Vzc2lvblN0b3JhZ2Uuc2V0SXRlbSgncHdhSW5zdGFsbERpc21pc3NlZCcsJzEnKTsgfSk7CiAgd2luZG93LmFkZEV2ZW50TGlzdGVuZXIoJ2FwcGluc3RhbGxlZCcsKCk9PnsgYmFubmVyLnN0eWxlLmRpc3BsYXk9J25vbmUnOyBkZWZlcnJlZFByb21wdD1udWxsOyB9KTsKICBjb25zdCBpb3M9L2lwaG9uZXxpcGFkfGlwb2QvaS50ZXN0KG5hdmlnYXRvci51c2VyQWdlbnQpOwogIGlmKGlvcyl7IGJhbm5lci5zdHlsZS5kaXNwbGF5PSdibG9jayc7IHRleHRvLnRleHRDb250ZW50PSdJbnN0YWxlIG5vIGlQaG9uZS9pUGFkIHBhcmEgYWNlc3NvIHLDoXBpZG8uJzsgfQp9KSgpOwo8L3NjcmlwdD4K'
           if 'pwaInstallBanner' not in s:
-              block=r'''
-<div id="pwaInstallBanner" style="display:none;position:fixed;left:16px;right:16px;bottom:18px;z-index:9999;background:#fff;border:1px solid #d7e3f0;border-radius:16px;box-shadow:0 8px 28px rgba(0,0,0,.18);padding:14px 16px;max-width:520px;margin:auto;font-family:inherit">
-  <div style="display:flex;align-items:center;gap:12px">
-    <img src="icon-administrador-192.png" alt="Ícone" width="48" height="48" style="border-radius:12px">
-    <div style="flex:1"><strong style="display:block;color:#25476A">Instalar Rotina Family ADM</strong><small id="pwaInstallTexto" style="color:#666">Instale para acessar mais rápido e usar recursos offline.</small></div>
-    <button id="pwaInstallBtn" style="border:0;background:#4a90e2;color:#fff;border-radius:10px;padding:9px 12px;font-weight:700;cursor:pointer">Instalar</button>
-    <button id="pwaInstallFechar" aria-label="Fechar" style="border:0;background:transparent;font-size:20px;cursor:pointer;color:#777">×</button>
-  </div>
-</div>
-<script>
-(() => {
-  let deferredPrompt=null;
-  const banner=document.getElementById('pwaInstallBanner');
-  const btn=document.getElementById('pwaInstallBtn');
-  const fechar=document.getElementById('pwaInstallFechar');
-  const texto=document.getElementById('pwaInstallTexto');
-  const standalone=window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone===true;
-  const dispensado=sessionStorage.getItem('pwaInstallDismissed')==='1';
-  if(standalone || dispensado) return;
-  window.addEventListener('beforeinstallprompt', e => {
-    e.preventDefault(); deferredPrompt=e; banner.style.display='block';
-  });
-  btn.addEventListener('click', async () => {
-    if(deferredPrompt){ deferredPrompt.prompt(); await deferredPrompt.userChoice; deferredPrompt=null; banner.style.display='none'; return; }
-    const ios=/iphone|ipad|ipod/i.test(navigator.userAgent);
-    if(ios){ texto.textContent='No Safari: toque em Compartilhar e depois em “Adicionar à Tela de Início”.'; btn.style.display='none'; }
-  });
-  fechar.addEventListener('click',()=>{ banner.style.display='none'; sessionStorage.setItem('pwaInstallDismissed','1'); });
-  window.addEventListener('appinstalled',()=>{ banner.style.display='none'; deferredPrompt=null; });
-  const ios=/iphone|ipad|ipod/i.test(navigator.userAgent);
-  if(ios){ banner.style.display='block'; texto.textContent='Instale no iPhone/iPad para acesso rápido.'; }
-})();
-</script>
-'''
-              s=s.replace(marker,block+marker)
-          p.write_text(s)
+              block=base64.b64decode(payload).decode()
+              s=s.replace('</body>',block+'</body>')
+              p.write_text(s)
           PY
       - name: Commit
         shell: bash

@@ -91,8 +91,8 @@ function aplicar(){
 }
 function garantirEscutas(){
   const g=grupo();if(!g||g==='--'||g==='CLI-Gen'||g===grupoAtivo)return;
-  unsubTarefas?.();unsubHistorico?.();grupoAtivo=g;
   const banco=getApps().length?getFirestore(getApp()):null;if(!banco)return;
+  unsubTarefas?.();unsubHistorico?.();grupoAtivo=g;
   unsubTarefas=onSnapshot(query(collection(banco,'tarefas'),where('grupoId','==',g)),s=>{tarefas=s.docs.map(d=>({id:d.id,...d.data()}));aplicar();},e=>console.warn('Início antecipado ADM/tarefas:',e));
   unsubHistorico=onSnapshot(query(collection(banco,'historico'),where('grupoId','==',g)),s=>{historico=s.docs.map(d=>({id:d.id,...d.data()}));aplicar();},e=>console.warn('Início antecipado ADM/histórico:',e));
 }

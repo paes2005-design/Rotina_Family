@@ -17,31 +17,33 @@ jobs:
           import re
           p=Path('index-ADMIN-v8.html')
           s=p.read_text(encoding='utf-8')
-
+          if s.count('<label>Pequeno atraso no início (%)</label>')!=1:
+              raise SystemExit('Unexpected count for first legacy label')
+          if s.count('<label>Atraso maior no início (%)</label>')!=1:
+              raise SystemExit('Unexpected count for second legacy label')
           s=s.replace('<label>Pequeno atraso no início (%)</label>','<label>Tolerância excedida até +25% (%)</label>',1)
           s=s.replace('<label>Atraso maior no início (%)</label>','<label>Tolerância excedida até +50% (%)</label>',1)
-
-          pattern=r'''    function textoRegraAtraso\(r=regraAtrasoAtual\)\{.*?    \}\n    function atualizarExplicacaoRegraAtrasoAdmin'''
-          repl='''    function textoRegraAtraso(r=regraAtrasoAtual){
-        return `<strong>Regra atual: ${r.dentroLimites}% / ${r.atrasoLeve}% / ${r.atrasoMaior}% / ${r.estourado}%.</strong><br>`+
-        `• O saldo consumido é a soma do atraso no início com o atraso no término.<br>`+
-        `• Consumo até 100% da tolerância: <strong>${r.dentroLimites}%</strong> dos pontos.<br>`+
-        `• Consumo acima da tolerância, até +25%: <strong>${r.atrasoLeve}%</strong>.<br>`+
-        `• Consumo acima de +25%, até +50%: <strong>${r.atrasoMaior}%</strong>.<br>`+
-        `• Consumo acima de +50% da tolerância: <strong>${r.estourado}%</strong>.<br><small>Exemplo com tolerância de 10 min: até 10 min consumidos = primeira faixa; 11 a 13 = segunda; 14 a 15 = terceira; acima de 15 = 0%. O cálculo usa minutos completos.</small>`;
-    }
-    function atualizarExplicacaoRegraAtrasoAdmin'''
+          pattern=r"    function textoRegraAtraso\(r=regraAtrasoAtual\)\{.*?    \}\n    function atualizarExplicacaoRegraAtrasoAdmin"
+          repl=(
+              "    function textoRegraAtraso(r=regraAtrasoAtual){\n"
+              "        return `<strong>Regra atual: ${r.dentroLimites}% / ${r.atrasoLeve}% / ${r.atrasoMaior}% / ${r.estourado}%.</strong><br>`+\n"
+              "        `• O saldo consumido é a soma do atraso no início com o atraso no término.<br>`+\n"
+              "        `• Consumo até 100% da tolerância: <strong>${r.dentroLimites}%</strong> dos pontos.<br>`+\n"
+              "        `• Consumo acima da tolerância, até +25%: <strong>${r.atrasoLeve}%</strong>.<br>`+\n"
+              "        `• Consumo acima de +25%, até +50%: <strong>${r.atrasoMaior}%</strong>.<br>`+\n"
+              "        `• Consumo acima de +50% da tolerância: <strong>${r.estourado}%</strong>.<br><small>Exemplo com tolerância de 10 min: até 10 min consumidos = primeira faixa; 11 a 13 = segunda; 14 a 15 = terceira; acima de 15 = 0%. O cálculo usa minutos completos.</small>`;\n"
+              "    }\n"
+              "    function atualizarExplicacaoRegraAtrasoAdmin"
+          )
           s2,n=re.subn(pattern,repl,s,flags=re.S)
           if n!=1:
               raise SystemExit(f'Expected exactly 1 admin scoring explanation function, found {n}')
           s=s2
-
           old='            if(!h.status || !h.status.includes("Prazo")) return;\n            const pts = h.pontosGanhos || 0;'
           new='            const pts = Number(h.pontosGanhos) || 0;'
           if s.count(old)!=1:
               raise SystemExit(f'Expected exactly 1 legacy admin points filter, found {s.count(old)}')
           s=s.replace(old,new,1)
-
           p.write_text(s,encoding='utf-8')
           PY
       - name: Verify replacements

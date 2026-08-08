@@ -1,0 +1,43 @@
+name: Final ADM audit fixes
+on:
+  push:
+    paths: ['.github/workflows/final-adm-audit.yml']
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Align dashboard punctuality and reset
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('index-ADMIN-v8.html'); s=p.read_text()
+          old='                            percentualAplicado: null,\n                            faixaAtraso: "",'
+          new='                            percentualAplicado: null,\n                            faixaAtraso: "",\n                            minutosAlemTolerancia: null,\n                            faixaLeveMinutos: null,'
+          if old not in s: raise SystemExit('ADM reset marker missing')
+          p.write_text(s.replace(old,new,1))
+
+          p=Path('dashboard-ranking-pro.js'); s=p.read_text()
+          old="function sequencia(hist){const datas=new Set(hist.filter(h=>h.status?.includes('Prazo')).map(h=>h.data));let d=new Date(),n=0;for(let i=0;i<60;i++){const k=iso(d);if(datas.has(k))n++;else if(i>0)break;d.setDate(d.getDate()-1)}return n;}"
+          new="function ehPontual(h){return h.faixaAtraso?h.faixaAtraso==='dentro-limites':(h.status?.includes('Prazo')&&!h.iniciouComAtraso);}\nfunction sequencia(hist){const datas=new Set(hist.filter(ehPontual).map(h=>h.data));let d=new Date(),n=0;for(let i=0;i<60;i++){const k=iso(d);if(datas.has(k))n++;else if(i>0)break;d.setDate(d.getDate()-1)}return n;}"
+          if old not in s: raise SystemExit('sequence marker missing')
+          s=s.replace(old,new,1)
+          old="prazo:hpPerfil.filter(x=>x.status?.includes('Prazo')).length"
+          if old not in s: raise SystemExit('profile punctuality marker missing')
+          s=s.replace(old,"prazo:hpPerfil.filter(ehPontual).length",1)
+          old="prazo=hp.filter(x=>x.status?.includes('Prazo')).length"
+          if old not in s: raise SystemExit('summary punctuality marker missing')
+          s=s.replace(old,"prazo=hp.filter(ehPontual).length",1)
+          old="const cont={prazo100:hp.filter(x=>x.status?.includes('Prazo')&&Number(x.percentualAplicado??100)>=100).length,parcial:hp.filter(x=>x.status?.includes('Prazo')&&Number(x.percentualAplicado??100)<100).length,zerado:hp.filter(x=>x.status?.includes('Atrasado')||Number(x.percentualAplicado)===0).length};"
+          new="const cont={prazo100:hp.filter(ehPontual).length,parcial:hp.filter(x=>x.status?.includes('Prazo')&&!ehPontual(x)).length,zerado:hp.filter(x=>x.status?.includes('Atrasado')||Number(x.percentualAplicado)===0).length};"
+          if old not in s: raise SystemExit('status chart marker missing')
+          p.write_text(s.replace(old,new,1))
+          PY
+          rm .github/workflows/final-adm-audit.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index-ADMIN-v8.html dashboard-ranking-pro.js .github/workflows/final-adm-audit.yml
+          git commit -m "Align dashboard punctuality with scoring bands"
+          git push

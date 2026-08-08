@@ -1,7 +1,5 @@
 const escUI=(v='')=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-import('./adm-enhancements.js').catch(e=>console.error('Aprimoramentos ADM:',e));
-
 function iconeTarefa(nome=''){
   const n=String(nome).toLowerCase();
   const regras=[

@@ -132,7 +132,6 @@ function limparFiltros(){
 function montarFiltroCompacto(){
   const monitor=document.getElementById('monitor'); if(!monitor||monitorPreparado)return;
   const oldData=document.getElementById('filtroData');
-  const oldUser=document.getElementById('filtroIntegrante');
   const oldContainer=oldData?.closest('div[style*="display: flex"]'); if(oldContainer)oldContainer.classList.add('monitor-old-filters');
   const nota=oldContainer?.nextElementSibling;if(nota&&nota.tagName==='P')nota.classList.add('monitor-old-filters');
   estadoMonitor.data=oldData?.value||hojeISO();
@@ -179,4 +178,5 @@ function iniciarMonitorPro(){
   if(select)new MutationObserver(()=>{if(monitorPreparado)atualizarOpcoesFiltro();}).observe(select,{childList:true});
 }
 
-window.addEventListener('DOMContentLoaded',iniciarMonitorPro);
+if(document.readyState==='loading') window.addEventListener('DOMContentLoaded',iniciarMonitorPro);
+else iniciarMonitorPro();

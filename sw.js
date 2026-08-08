@@ -1,4 +1,4 @@
-const CACHE_NAME = 'rotina-family-adm-v4';
+const CACHE_NAME = 'rotina-family-adm-v5';
 const APP_SHELL = ['./','./index.html','./index-ADMIN-v8.html','./manifest.json','./icon-administrador-192.png','./icon-administrador-512.png','./dashboard-ranking-pro.css','./dashboard-ranking-pro.js'];
 const MODULE_ROOTS = [
   'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js',

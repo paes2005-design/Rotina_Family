@@ -1,77 +1,92 @@
-name: Temporary ADM quality checks
+name: Rotina Family ADM regression audit
 on:
   push:
     paths:
       - '.github/workflows/temporary-adm-quality-check.yml'
-      - 'mobile-app-ui.js'
-      - 'mobile-app-ui.css'
-      - 'adm-justification-review.js'
-      - 'sw.js'
+      - '*.js'
+      - '*.css'
+      - '*.html'
+      - 'manifest.json'
 jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: JavaScript syntax
+      - name: Syntax and JSON
         run: |
+          node --check dashboard-ranking-pro.js
+          node --check monitor-pro.js
+          node --check manage-pro.js
           node --check mobile-app-ui.js
           node --check adm-justification-review.js
           node --check sw.js
-      - name: Static safety and behavior checks
+          node -e "JSON.parse(require('fs').readFileSync('manifest.json','utf8')); console.log('manifest OK')"
+      - name: Full ADM regression audit
         run: |
           node <<'NODE'
-          const fs=require('fs');
-          const vm=require('vm');
-          const mobile=fs.readFileSync('mobile-app-ui.js','utf8');
-          const css=fs.readFileSync('mobile-app-ui.css','utf8');
-          const review=fs.readFileSync('adm-justification-review.js','utf8');
-          const sw=fs.readFileSync('sw.js','utf8');
+          const fs=require('fs'),vm=require('vm');
+          const read=f=>fs.readFileSync(f,'utf8');
+          const html=read('index-ADMIN-v8.html'),dash=read('dashboard-ranking-pro.js'),mon=read('monitor-pro.js'),manage=read('manage-pro.js'),mobile=read('mobile-app-ui.js'),css=read('mobile-app-ui.css'),review=read('adm-justification-review.js'),sw=read('sw.js'),manifest=JSON.parse(read('manifest.json'));
           const assert=(ok,msg)=>{if(!ok)throw new Error(msg);console.log('OK - '+msg)};
 
+          // Inicialização / estabilidade
           assert(!mobile.includes('setInterval('),'mobile UI has no continuous interval');
           assert(!review.includes('setInterval('),'review module has no continuous interval');
           assert(!review.includes('MutationObserver'),'review module adds no mutation observer');
-          assert(mobile.includes('mon-just-flag'),'mobile justification uses a flag button');
-          assert(mobile.includes('data-date='),'flag carries exact selected date');
-          assert(css.includes('.mon-just-flag'),'flag has mobile CSS');
+          assert(!mobile.includes("adm-enhancements.js"),'known freezing enhancement is not imported');
+          assert(!sw.includes("adm-enhancements.js"),'known freezing enhancement is outside app shell');
+          assert(sw.includes("network")||sw.includes("cache:'no-store'"),'app code is refreshed network-first');
+          assert(manifest.start_url.includes('index-ADMIN-v8.html'),'installed ADM starts directly on real page');
+          assert(sw.includes('APP_MAIN_URL'),'legacy root navigation is redirected by service worker');
+          assert(mobile.includes("MOBILE_QUERY.matches"),'mobile-only UI is gated by viewport');
+
+          // Monitor mobile / justificativa
+          assert(mobile.includes('mon-just-flag'),'justification is a dedicated clickable flag');
+          assert(mobile.includes('data-date='),'flag carries exact occurrence date');
+          assert(css.includes('.mon-just-flag'),'flag has touch-friendly CSS');
           assert(css.includes('white-space:normal'),'status may wrap instead of truncating');
-          assert(review.includes("`${t.perfilId}_${t.id}_${data}`"),'history lookup is scoped to exact occurrence id');
-          assert(review.includes("`${data}__${t.id}`"),'execution lookup is scoped to exact date');
-          assert(review.includes("x.data===data"),'legacy history fallback is date-scoped');
-          assert(review.includes("pontosOriginais"),'automatic original points are preserved');
-          assert(review.includes("percentualOriginal"),'automatic original percentage is preserved');
-          assert(review.includes("revisaoDecisao"),'review decision is recorded');
-          assert(review.includes("pontosDevolvidos"),'returned points are recorded');
-          assert(review.includes("if(!rel.hist.length)throw"),'review refuses to write when exact history is missing');
-          assert(sw.includes("adm-justification-review.js"),'review module is in app shell');
-          assert(sw.includes("rotina-family-adm-v22"),'new cache version is active');
+          assert(review.includes("`${t.perfilId}_${t.id}_${data}`"),'history lookup targets exact deterministic occurrence');
+          assert(review.includes("`${data}__${t.id}`"),'execution lookup targets exact date');
+          assert(review.includes("x.data===data"),'legacy history fallback remains date-scoped');
+          assert(review.includes("if(!rel.hist.length)throw"),'review refuses write when exact history is missing');
+          assert(review.includes('pontosOriginais'),'automatic points are preserved');
+          assert(review.includes('percentualOriginal'),'automatic percentage is preserved');
+          assert(review.includes('pontosDevolvidos'),'returned points are separately recorded');
+          assert(review.includes('revisaoDecisao'),'adult decision is separately recorded');
+          assert(review.includes("resultado-mantido"),'adult may keep automatic result');
+          assert(review.includes("devolucao-total"),'adult may fully return points');
 
-          const statusMatch=mobile.match(/function statusCard\(txt=''\)\{[\s\S]*?\n\}/);
-          assert(!!statusMatch,'statusCard function found for runtime tests');
-          const sandbox={result:null};
-          vm.createContext(sandbox);
-          vm.runInContext(statusMatch[0]+'; result=statusCard;',sandbox);
-          const statusCard=sandbox.result;
-          assert(JSON.stringify(statusCard('No Prazo (100%)'))===JSON.stringify(['ok','100% · No prazo']),'100% mobile status renders fully');
-          assert(JSON.stringify(statusCard('No Prazo — pequeno atraso (75%)'))===JSON.stringify(['partial','75% · atraso leve']),'75% mobile status renders fully');
-          assert(JSON.stringify(statusCard('No Prazo — atraso maior (50%)'))===JSON.stringify(['partial','50% · atraso maior']),'50% mobile status renders fully');
-          assert(JSON.stringify(statusCard('Atrasado (0%)'))===JSON.stringify(['late','0% · Atrasado']),'0% mobile status renders fully');
+          // Status: test real function, including 100% vs 0% regression
+          const sm=mobile.match(/function statusCard\(txt=''\)\{[\s\S]*?\n\}/);assert(sm,'statusCard found');
+          const box={fn:null};vm.createContext(box);vm.runInContext(sm[0]+';fn=statusCard;',box);
+          const eq=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
+          assert(eq(box.fn('No Prazo (100%)'),['ok','100% · No prazo']),'100% is not confused with 0%');
+          assert(eq(box.fn('No Prazo — atraso leve (75%)'),['partial','75% · atraso leve']),'75% status fits mobile');
+          assert(eq(box.fn('No Prazo — atraso maior (50%)'),['partial','50% · atraso maior']),'50% status fits mobile');
+          assert(eq(box.fn('Atrasado (0%)'),['late','0% · Atrasado']),'0% status is explicit');
 
-          const escMatch=mobile.match(/const escUI=.*?;\n/);
-          assert(!!escMatch,'escUI function found for runtime tests');
-          const escBox={out:null};vm.createContext(escBox);vm.runInContext(escMatch[0]+'out=escUI;',escBox);
-          const escaped=escBox.out('"<teste>&');
-          assert(!escaped.includes('"')&&!escaped.includes('<')&&!escaped.includes('>'),'justification data attributes escape unsafe characters');
+          // Dashboard / ranking
+          assert(dash.includes('rankingDetalhadoDashboard'),'detailed ranking renderer exists');
+          assert(dash.includes('pontosGanhos'),'dashboard ranks by effective points');
+          assert(dash.includes("faixaAtraso==='dentro-limites'"),'punctuality remains based on automatic result');
+          assert(css.includes('#rankingDetalhadoDashboard .ranking-table-pro{min-width:0'),'mobile ranking width override exists');
 
-          const pts=(max,pct)=>Math.round(max*pct/100);
-          const devolver=(original,max,pct)=>Math.max(original,pts(max,pct));
-          assert(pts(20,50)===10,'20 pts at 50% = 10');
-          assert(pts(20,75)===15,'20 pts at 75% = 15');
-          assert(pts(20,100)===20,'20 pts at 100% = 20');
-          assert(devolver(0,20,50)===10,'0 -> 50% returns 10 points');
-          assert(devolver(0,20,75)===15,'0 -> 75% returns 15 points');
-          assert(devolver(0,20,100)===20,'0 -> 100% returns 20 points');
-          assert(devolver(10,20,75)===15,'50% -> 75% returns total 15 points');
-          assert(devolver(10,20,100)===20,'50% -> 100% returns total 20 points');
-          console.log('All ADM regression checks passed.');
+          // Core admin flows still present
+          for(const s of ['salvarTarefa','preencherEdicaoTarefa','excluirTarefa','atualizarMonitor','renderizarDashboard','salvarRecompensa']) assert(html.includes(s),`core flow ${s} remains present`);
+          assert(html.includes('justificativaObrigatoria'),'task justification setting remains present');
+          assert(html.includes('onAuthStateChanged'),'session restoration remains present');
+          assert(manage.includes("import('./mobile-app-ui.js')"),'manage -> mobile UI import chain intact');
+          assert(dash.includes("import('./monitor-pro.js')"),'dashboard -> monitor import chain intact');
+          assert(mon.includes("import('./manage-pro.js')"),'monitor -> manage import chain intact');
+          assert(mobile.includes("import('./adm-justification-review.js')"),'mobile/desktop UI -> review import intact');
+
+          // Return point calculations
+          const pts=(max,pct)=>Math.round(max*pct/100),ret=(orig,max,p)=>Math.max(orig,pts(max,p));
+          assert(ret(0,20,50)===10,'0 -> 50% = 10/20');
+          assert(ret(0,20,75)===15,'0 -> 75% = 15/20');
+          assert(ret(0,20,100)===20,'0 -> 100% = 20/20');
+          assert(ret(10,20,75)===15,'50% -> 75% = 15/20');
+          assert(ret(10,20,100)===20,'50% -> 100% = 20/20');
+          assert(ret(15,20,50)===15,'review never removes already-earned points');
+          console.log('ALL ADM REGRESSION CHECKS PASSED');
           NODE

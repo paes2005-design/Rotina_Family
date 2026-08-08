@@ -19,10 +19,10 @@ window.iconeTarefaRotina=iconeTarefa;
 
 function statusCard(txt=''){
   const t=String(txt).toLowerCase();
+  if(t.includes('100%'))return['ok','100% · No prazo'];
   if(t.includes('75%'))return['partial','75% · atraso leve'];
   if(t.includes('50%'))return['partial','50% · atraso maior'];
-  if(t.includes('atrasado')||t.includes('0%'))return['late','0% · Atrasado'];
-  if(t.includes('100%'))return['ok','100% · No prazo'];
+  if(t.includes('atrasado')||/(^|[^\d])0%/.test(t))return['late','0% · Atrasado'];
   if(t.includes('prazo'))return['ok','No prazo'];
   if(t.includes('andamento'))return['progress','Em andamento'];
   return['pending',txt.trim()||'Pendente'];

@@ -1,7 +1,9 @@
 import {getApps,getApp} from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
 import {getFirestore,collection,query,where,getDocs,doc,getDoc,writeBatch} from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
 
-const esc=(v='')=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const esc=(v='')=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
+const pad=n=>String(n).padStart(2,'0');
+const hojeISO=()=>{const d=new Date();return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;};
 let contextoAtual=null;
 let salvando=false;
 
@@ -12,14 +14,14 @@ function parseHorario(txt=''){
   const m=String(txt).match(/(\d{2}:\d{2}).*?(\d{2}:\d{2})/);
   return m?{inicio:m[1],fim:m[2]}:{inicio:'',fim:''};
 }
-function pctOriginal(t){
-  if(Number.isFinite(Number(t.percentualOriginal)))return Number(t.percentualOriginal);
-  if(Number.isFinite(Number(t.percentualAplicado)))return Number(t.percentualAplicado);
-  const max=Number(t.pontosMaximos)||0,pts=Number(t.pontosOriginais??t.pontosGanhos)||0;
-  return max?Math.round(pts/max*100):0;
-}
-function pontosOriginais(t){return Number.isFinite(Number(t.pontosOriginais))?Number(t.pontosOriginais):(Number(t.pontosGanhos)||0);}
 function pontosPara(max,pct){return Math.round((Number(max)||0)*(Number(pct)||0)/100);}
+function originalDaOcorrencia(h){
+  const max=Number(h.pontosMaximos)||0;
+  const pontos=Number.isFinite(Number(h.pontosOriginais))?Number(h.pontosOriginais):(Number(h.pontosGanhos)||0);
+  const pct=Number.isFinite(Number(h.percentualOriginal))?Number(h.percentualOriginal):(Number.isFinite(Number(h.percentualAplicado))?Number(h.percentualAplicado):(max?Math.round(pontos/max*100):0));
+  const pctAtual=Number.isFinite(Number(h.percentualRevisado))?Number(h.percentualRevisado):pct;
+  return {max,pontos,pct,pctAtual,pontosAtuais:Number(h.pontosGanhos)||0};
+}
 
 function garantirModal(){
   let m=document.getElementById('admReviewJustModal');
@@ -52,55 +54,15 @@ async function localizarTarefa(ctx){
   if(ctx.id){const s=await getDoc(doc(banco,'tarefas',ctx.id));if(s.exists())return{id:s.id,...s.data()};}
   const snap=await getDocs(query(collection(banco,'tarefas'),where('grupoId','==',g)));
   const horario=parseHorario(ctx.horario||ctx.schedule||'');
-  const lista=snap.docs.map(d=>({id:d.id,...d.data()})).filter(t=>
-    (!ctx.tarefa||t.nome===ctx.tarefa)&&
-    (!ctx.usuario||t.perfilNome===ctx.usuario)&&
-    (!ctx.dia||t.diaSemana===ctx.dia)&&
-    (!horario.inicio||t.horaSugeridaInicio===horario.inicio)&&
-    (!horario.fim||t.horaSugeridaFim===horario.fim)
-  );
-  if(ctx.justificativa){const exata=lista.find(t=>(t.justificativaAtraso||'').trim()===ctx.justificativa.trim());if(exata)return exata;}
+  const lista=snap.docs.map(d=>({id:d.id,...d.data()})).filter(t=>(!ctx.tarefa||t.nome===ctx.tarefa)&&(!ctx.usuario||t.perfilNome===ctx.usuario)&&(!ctx.dia||t.diaSemana===ctx.dia)&&(!horario.inicio||t.horaSugeridaInicio===horario.inicio)&&(!horario.fim||t.horaSugeridaFim===horario.fim));
   return lista[0]||null;
-}
-
-function montarAcoes(t){
-  const originalPct=pctOriginal(t),originalPts=pontosOriginais(t),max=Number(t.pontosMaximos)||0;
-  const atual=Number(t.pontosGanhos)||0,rev=t.revisaoStatus==='revisado';
-  const botoes=[50,75,100].map(p=>`<button type="button" data-review="devolver" data-pct="${p}" ${p<=originalPct?'disabled':''}>Devolver até ${p}%<br><small>${Math.max(originalPts,pontosPara(max,p))} pts</small></button>`).join('');
-  return {html:`<button type="button" data-review="manter" data-pct="">Manter resultado automático</button>${botoes}`,originalPct,originalPts,max,atual,rev};
-}
-
-async function abrir(ctx={}){
-  const m=garantirModal();
-  const msg=m.querySelector('#admReviewMsg');
-  const data=ctx.data||dataSelecionada();
-  m.style.display='flex';msg.textContent='Carregando ocorrência…';m.querySelector('#admReviewAcoes').innerHTML='';
-  m.querySelector('#admReviewTexto').textContent=ctx.justificativa||'Carregando…';
-  try{
-    if(!/^\d{4}-\d{2}-\d{2}$/.test(data))throw new Error('Selecione a data da ocorrência no Monitor antes de revisar.');
-    const t=await localizarTarefa(ctx);if(!t)throw new Error('Não foi possível localizar esta tarefa.');
-    const justificativa=(t.justificativaAtraso||ctx.justificativa||'').trim();
-    contextoAtual={tarefa:t,data};
-    const a=montarAcoes(t);
-    m.querySelector('#admReviewTitulo').textContent=t.nome||'Revisar ocorrência';
-    m.querySelector('#admReviewResumo').innerHTML=`<strong>${esc(t.perfilNome||ctx.usuario||'Integrante')}</strong> · ${esc(t.diaSemana||ctx.dia||'')} · ${esc(data.split('-').reverse().join('/'))}<br>${esc(t.horaSugeridaInicio||'--:--')}–${esc(t.horaSugeridaFim||'--:--')}`;
-    m.querySelector('#admReviewTexto').textContent=justificativa||'Nenhuma justificativa em texto foi encontrada.';
-    m.querySelector('#admReviewOriginal').innerHTML=`Resultado automático preservado: <strong>${esc(t.status||'—')}</strong> · <strong>${a.originalPts}/${a.max} pts</strong>${a.rev?`<br>Revisão atual: <strong>${a.atual}/${a.max} pts</strong> · devolvidos ${Number(t.pontosDevolvidos)||0} pts`:''}`;
-    m.querySelector('#admReviewAcoes').innerHTML=justificativa?a.html:'<div style="grid-column:1/-1;color:#64748b;font-size:12px">Sem justificativa enviada, não há pontos para revisar por este fluxo.</div>';
-    msg.textContent='';
-  }catch(e){console.error('Revisão de justificativa:',e);msg.textContent=e.message||'Não foi possível carregar a justificativa.';}
 }
 
 async function docsRelacionados(banco,t,data){
   if(!/^\d{4}-\d{2}-\d{2}$/.test(data))throw new Error('Data da ocorrência inválida.');
-  const hist=[];const exec=[];
-  if(t.perfilId){
-    const h=await getDoc(doc(banco,'historico',`${t.perfilId}_${t.id}_${data}`));
-    if(h.exists())hist.push(h);
-  }
-  const e=await getDoc(doc(banco,'execucoes',`${data}__${t.id}`));
-  if(e.exists())exec.push(e);
-  // Compatibilidade com históricos antigos cujo perfilId ou ID determinístico ainda não existia.
+  const hist=[],exec=[];
+  if(t.perfilId){const h=await getDoc(doc(banco,'historico',`${t.perfilId}_${t.id}_${data}`));if(h.exists())hist.push(h);}
+  const e=await getDoc(doc(banco,'execucoes',`${data}__${t.id}`));if(e.exists())exec.push(e);
   if(!hist.length){
     const hs=await getDocs(query(collection(banco,'historico'),where('tarefaId','==',t.id)));
     hs.docs.filter(d=>{const x=d.data();return x.data===data&&(!t.perfilId||!x.perfilId||x.perfilId===t.perfilId);}).forEach(d=>hist.push(d));
@@ -108,36 +70,59 @@ async function docsRelacionados(banco,t,data){
   return {hist,exec};
 }
 
+function montarAcoes(h){
+  const o=originalDaOcorrencia(h);
+  const jaDevolveu=o.pctAtual>o.pct;
+  const manterDisabled=jaDevolveu?'disabled':'';
+  const botoes=[50,75,100].map(p=>`<button type="button" data-review="devolver" data-pct="${p}" ${p<=o.pctAtual?'disabled':''}>Devolver até ${p}%<br><small>${Math.max(o.pontos,pontosPara(o.max,p))} pts</small></button>`).join('');
+  return {html:`<button type="button" data-review="manter" data-pct="" ${manterDisabled}>Manter resultado automático</button>${botoes}`,...o};
+}
+
+async function abrir(ctx={}){
+  const m=garantirModal(),msg=m.querySelector('#admReviewMsg'),data=ctx.data||dataSelecionada();
+  m.style.display='flex';msg.textContent='Carregando ocorrência…';m.querySelector('#admReviewAcoes').innerHTML='';m.querySelector('#admReviewTexto').textContent=ctx.justificativa||'Carregando…';
+  try{
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(data))throw new Error('Selecione a data da ocorrência no Monitor antes de revisar.');
+    const banco=db();if(!banco)throw new Error('Firebase ainda não está disponível.');
+    const t=await localizarTarefa(ctx);if(!t)throw new Error('Não foi possível localizar esta tarefa.');
+    const rel=await docsRelacionados(banco,t,data);if(!rel.hist.length)throw new Error('Não encontrei o histórico dessa ocorrência na data selecionada.');
+    const h={id:rel.hist[0].id,...rel.hist[0].data()};
+    const justificativa=(h.justificativaAtraso||ctx.justificativa||'').trim();
+    contextoAtual={tarefa:t,data,historico:h,histDocs:rel.hist,execDocs:rel.exec};
+    const a=montarAcoes(h);
+    m.querySelector('#admReviewTitulo').textContent=h.nomeTarefa||t.nome||'Revisar ocorrência';
+    m.querySelector('#admReviewResumo').innerHTML=`<strong>${esc(h.perfilNome||t.perfilNome||ctx.usuario||'Integrante')}</strong> · ${esc(h.diaSemana||t.diaSemana||ctx.dia||'')} · ${esc(data.split('-').reverse().join('/'))}<br>${esc(h.horaSugeridaInicio||t.horaSugeridaInicio||'--:--')}–${esc(h.horaSugeridaFim||t.horaSugeridaFim||'--:--')}`;
+    m.querySelector('#admReviewTexto').textContent=justificativa||'Nenhuma justificativa em texto foi encontrada.';
+    m.querySelector('#admReviewOriginal').innerHTML=`Resultado automático preservado: <strong>${esc(h.status||'—')}</strong> · <strong>${a.pontos}/${a.max} pts</strong>${h.revisaoStatus==='revisado'?`<br>Revisão atual: <strong>${a.pontosAtuais}/${a.max} pts</strong> · devolvidos ${Number(h.pontosDevolvidos)||0} pts`:''}`;
+    m.querySelector('#admReviewAcoes').innerHTML=justificativa?a.html:'<div style="grid-column:1/-1;color:#64748b;font-size:12px">Sem justificativa enviada, não há pontos para revisar por este fluxo.</div>';
+    msg.textContent='';
+  }catch(e){console.error('Revisão de justificativa:',e);msg.textContent=e.message||'Não foi possível carregar a justificativa.';}
+}
+
 async function salvarRevisao(tipo,pct){
-  if(salvando||!contextoAtual?.tarefa)return;
+  if(salvando||!contextoAtual?.tarefa||!contextoAtual?.historico)return;
   salvando=true;
   const m=garantirModal(),msg=m.querySelector('#admReviewMsg'),buttons=[...m.querySelectorAll('#admReviewAcoes button')];buttons.forEach(b=>b.disabled=true);msg.textContent='Salvando revisão…';
   try{
-    const banco=db(),t=contextoAtual.tarefa,data=contextoAtual.data;if(!banco)throw new Error('Firebase ainda não está disponível.');
-    const rel=await docsRelacionados(banco,t,data);
-    if(!rel.hist.length)throw new Error('Histórico desta ocorrência não foi encontrado; nenhuma pontuação foi alterada.');
-    const histBase=rel.hist[0].data();
-    const originalPts=Number.isFinite(Number(histBase.pontosOriginais))?Number(histBase.pontosOriginais):(Number(histBase.pontosGanhos)||0);
-    const originalPct=Number.isFinite(Number(histBase.percentualOriginal))?Number(histBase.percentualOriginal):(Number.isFinite(Number(histBase.percentualAplicado))?Number(histBase.percentualAplicado):(Number(histBase.pontosMaximos)?Math.round(originalPts/Number(histBase.pontosMaximos)*100):0));
-    const max=Number(histBase.pontosMaximos??t.pontosMaximos)||0;
-    const alvoPct=tipo==='manter'?originalPct:Math.max(originalPct,Number(pct)||0);
-    const novosPts=tipo==='manter'?originalPts:Math.max(originalPts,pontosPara(max,alvoPct));
-    const devolvidos=Math.max(0,novosPts-originalPts);
+    const banco=db();if(!banco)throw new Error('Firebase ainda não está disponível.');
+    const {tarefa:t,data,historico:h,histDocs,execDocs}=contextoAtual;
+    const o=originalDaOcorrencia(h);
+    const alvoPct=tipo==='manter'?o.pct:Math.max(o.pctAtual,Number(pct)||0);
+    const novosPts=tipo==='manter'?o.pontos:Math.max(o.pontosAtuais,o.pontos,pontosPara(o.max,alvoPct));
+    const devolvidos=Math.max(0,novosPts-o.pontos);
     const agora=new Date().toISOString();
     const decisao=tipo==='manter'?'resultado-mantido':alvoPct>=100?'devolucao-total':`devolucao-${alvoPct}`;
-    const patch={pontosGanhos:novosPts,pontosOriginais:originalPts,percentualOriginal:originalPct,percentualRevisado:alvoPct,pontosDevolvidos:devolvidos,revisaoStatus:'revisado',revisaoDecisao:decisao,revisadoEm:agora};
+    const patch={pontosGanhos:novosPts,pontosOriginais:o.pontos,percentualOriginal:o.pct,percentualRevisado:alvoPct,pontosDevolvidos:devolvidos,revisaoStatus:'revisado',revisaoDecisao:decisao,revisadoEm:agora};
     const batch=writeBatch(banco);
-    // Atualiza a tarefa atual apenas se a revisão for da execução que ela ainda representa.
-    const dataTarefa=String(t.dataExecucao||t.terminoExecutadoEm||t.inicioExecutadoEm||'').slice(0,10);
-    const mesmaExecucao=!dataTarefa||dataTarefa===data;
-    if(mesmaExecucao)batch.update(doc(banco,'tarefas',t.id),patch);
-    rel.hist.forEach(d=>batch.update(d.ref,patch));
-    rel.exec.forEach(d=>batch.update(d.ref,patch));
+    histDocs.forEach(d=>batch.update(d.ref,patch));
+    execDocs.forEach(d=>batch.update(d.ref,patch));
+    // A coleção tarefas representa a ocorrência atual. Nunca altera uma tarefa atual ao revisar um dia passado.
+    if(data===hojeISO())batch.update(doc(banco,'tarefas',t.id),patch);
     await batch.commit();
-    contextoAtual.tarefa={...t,...patch};
+    const atualizado={...h,...patch};contextoAtual.historico=atualizado;
     msg.textContent=tipo==='manter'?'Revisão salva: resultado automático mantido.':`Revisão salva: ${devolvidos} ponto(s) devolvido(s).`;
-    m.querySelector('#admReviewOriginal').innerHTML=`Resultado automático preservado: <strong>${esc(histBase.status||t.status||'—')}</strong> · <strong>${originalPts}/${max} pts</strong><br>Revisão atual: <strong>${novosPts}/${max} pts</strong> · devolvidos ${devolvidos} pts`;
-    m.querySelector('#admReviewAcoes').innerHTML=montarAcoes({...t,...patch,pontosMaximos:max}).html;
+    m.querySelector('#admReviewOriginal').innerHTML=`Resultado automático preservado: <strong>${esc(h.status||'—')}</strong> · <strong>${o.pontos}/${o.max} pts</strong><br>Revisão atual: <strong>${novosPts}/${o.max} pts</strong> · devolvidos ${devolvidos} pts`;
+    m.querySelector('#admReviewAcoes').innerHTML=montarAcoes(atualizado).html;
     setTimeout(()=>{if(document.getElementById('admReviewJustModal')?.style.display==='flex')fecharModal();},900);
   }catch(e){console.error('Salvar revisão:',e);msg.textContent=e.message||'Não foi possível salvar a revisão. Tente novamente.';buttons.forEach(b=>b.disabled=false);}
   finally{salvando=false;}
@@ -147,11 +132,7 @@ window.abrirRevisaoJustificativa=abrir;
 
 document.addEventListener('click',e=>{
   const mobile=e.target.closest?.('.mon-just-flag');
-  if(mobile){
-    e.preventDefault();
-    abrir({tarefa:mobile.dataset.taskName||'',usuario:mobile.dataset.user||'',dia:mobile.dataset.day||'',horario:mobile.dataset.schedule||'',justificativa:mobile.dataset.justification||'',data:mobile.dataset.date||''});
-    return;
-  }
+  if(mobile){e.preventDefault();abrir({tarefa:mobile.dataset.taskName||'',usuario:mobile.dataset.user||'',dia:mobile.dataset.day||'',horario:mobile.dataset.schedule||'',justificativa:mobile.dataset.justification||'',data:mobile.dataset.date||''});return;}
   const flag=e.target.closest?.('.tooltip-justificativa');
   if(flag){
     e.preventDefault();

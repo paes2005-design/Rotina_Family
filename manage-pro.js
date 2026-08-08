@@ -1,3 +1,9 @@
+if(!document.querySelector('link[data-mobile-app-ui]')){
+  const link=document.createElement('link');
+  link.rel='stylesheet';link.href='./mobile-app-ui.css';link.dataset.mobileAppUi='1';document.head.appendChild(link);
+}
+import('./mobile-app-ui.js').catch(e=>console.error('Interface móvel:',e));
+
 const GER_DIAS=['Segunda','Terça','Quarta','Quinta','Sexta','Sábado','Domingo'];
 const GER_ROTULOS={Segunda:'Seg',Terça:'Ter',Quarta:'Qua',Quinta:'Qui',Sexta:'Sex',Sábado:'Sáb',Domingo:'Dom'};
 let gerDiaAtual='Segunda';

@@ -19,6 +19,7 @@ jobs:
           node --check manage-pro.js
           node --check mobile-app-ui.js
           node --check adm-justification-review.js
+          node --check adm-early-start-ui.js
           node --check sw.js
           node -e "JSON.parse(require('fs').readFileSync('manifest.json','utf8')); console.log('manifest OK')"
       - name: Full ADM regression audit
@@ -26,13 +27,15 @@ jobs:
           node <<'NODE'
           const fs=require('fs'),vm=require('vm');
           const read=f=>fs.readFileSync(f,'utf8');
-          const html=read('index-ADMIN-v8.html'),dash=read('dashboard-ranking-pro.js'),mon=read('monitor-pro.js'),manage=read('manage-pro.js'),mobile=read('mobile-app-ui.js'),css=read('mobile-app-ui.css'),review=read('adm-justification-review.js'),sw=read('sw.js'),manifest=JSON.parse(read('manifest.json'));
+          const html=read('index-ADMIN-v8.html'),dash=read('dashboard-ranking-pro.js'),mon=read('monitor-pro.js'),manage=read('manage-pro.js'),mobile=read('mobile-app-ui.js'),css=read('mobile-app-ui.css'),review=read('adm-justification-review.js'),early=read('adm-early-start-ui.js'),sw=read('sw.js'),manifest=JSON.parse(read('manifest.json'));
           const assert=(ok,msg)=>{if(!ok)throw new Error(msg);console.log('OK - '+msg)};
 
           // Inicialização / estabilidade
           assert(!mobile.includes('setInterval('),'mobile UI has no continuous interval');
           assert(!review.includes('setInterval('),'review module has no continuous interval');
+          assert(!early.includes('setInterval('),'early-start ADM module has no continuous interval');
           assert(!review.includes('MutationObserver'),'review module adds no mutation observer');
+          assert(early.includes("observe(tb,{childList:true,subtree:false})"),'early-start observer is restricted to direct monitor rows');
           assert(!mobile.includes("adm-enhancements.js"),'known freezing enhancement is not imported');
           assert(!sw.includes("adm-enhancements.js"),'known freezing enhancement is outside app shell');
           assert(sw.includes("cache:'no-store'"),'app code is refreshed network-first');
@@ -48,8 +51,8 @@ jobs:
           assert(!html.includes('iniciar ou terminar depois do limite final sempre zera'),'old final-limit wording is gone');
           assert(!html.includes('if(!h.status || !h.status.includes("Prazo")) return;'),'Monitor points do not discard reviewed late-task points');
 
-          // Monitor mobile / justificativa
-          assert(mobile.includes('mon-just-flag'),'justification is a dedicated clickable flag');
+          // Monitor mobile / justificativa de atraso
+          assert(mobile.includes('mon-just-flag'),'late justification is a dedicated clickable flag');
           assert(mobile.includes('data-date='),'flag carries exact occurrence date');
           assert(css.includes('.mon-just-flag'),'flag has touch-friendly CSS');
           assert(css.includes('white-space:normal'),'status may wrap instead of truncating');
@@ -63,6 +66,20 @@ jobs:
           assert(review.includes('revisaoDecisao'),'adult decision is separately recorded');
           assert(review.includes("resultado-mantido"),'adult may keep automatic result');
           assert(review.includes("devolucao-total"),'adult may fully return points');
+
+          // Início antecipado: informação separada, azul, por data e sem alterar pontos
+          assert(mobile.includes("import('./adm-early-start-ui.js')"),'ADM early-start module is loaded');
+          assert(early.includes("b.textContent='🔵 Início antecipado'"),'desktop ADM shows blue early-start status');
+          assert(mobile.includes('🔵 Início antecipado'),'mobile ADM shows blue early-start status');
+          assert(early.includes('motivoInicioAntecipado'),'ADM reads the early-start reason');
+          assert(early.includes("x.data===data&&x.inicioAntecipado===true"),'ADM historical early-start lookup is exact-date scoped');
+          assert(early.includes("x.dataExecucao===data"),'ADM current task early-start lookup is execution-date scoped');
+          assert(early.includes('Motivo informado'),'ADM modal presents the recorded reason');
+          assert(early.includes('não reduz pontos nem consome tolerância'),'ADM explicitly treats early start as informational');
+          assert(!early.includes('updateDoc(')&&!early.includes('setDoc(')&&!early.includes('writeBatch('),'ADM early-start display module never writes scoring/data');
+          assert(mobile.includes("querySelector('.badge')"),'mobile main status ignores the extra blue informational badge');
+          assert(mobile.includes("addEventListener('rotina-early-start-updated'"),'mobile cards refresh after early-start marker is attached');
+          assert(sw.includes('adm-early-start-ui.js')&&sw.includes('rotina-family-adm-v27'),'ADM PWA caches the new module in v27');
 
           // Decisão única / reversão / offline
           assert(!review.includes('runTransaction'),'review no longer depends on online-only transaction');

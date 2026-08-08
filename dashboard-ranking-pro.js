@@ -1,11 +1,20 @@
 import { getApps, getApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 import { getFirestore, collection, query, where, getDocs, doc, writeBatch } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
+if(!document.querySelector('link[data-monitor-pro]')){
+  const link=document.createElement('link');
+  link.rel='stylesheet';
+  link.href='./monitor-pro.css';
+  link.dataset.monitorPro='1';
+  document.head.appendChild(link);
+}
+import('./monitor-pro.js').catch(e=>console.error('Monitor profissional:',e));
+
 const obterDb = () => getApps().length ? getFirestore(getApp()) : null;
 let periodoAtual = 'semanal';
 let dashboardMontada = false;
 
-const esc = (v='') => String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const esc = (v='') => String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
 const iso = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 const inicioSemana = d => { const x=new Date(d); x.setHours(0,0,0,0); x.setDate(x.getDate()-x.getDay()); return x; };
 const cores=['#315e8a','#4d8f74','#d39b3a','#9c6ade','#d1605d','#5b7c99','#7b8f47'];

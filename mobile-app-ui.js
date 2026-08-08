@@ -29,6 +29,7 @@ function statusCard(txt=''){
 }
 
 function dadosMonitor(){
+  const data=document.getElementById('filtroData')?.value||'';
   return [...document.querySelectorAll('#tbodyMonitor tr')]
     .filter(r=>r.children.length>=6&&!r.classList.contains('monitor-hidden'))
     .map(r=>{
@@ -43,14 +44,7 @@ function dadosMonitor(){
         clone.querySelectorAll('.tooltip-justificativa,[title*="Justificativa"]').forEach(x=>x.remove());
         detalhes=(clone.textContent||'').replace(/\s+/g,' ').trim();
       }
-      return{
-        horario,tarefa,
-        usuario:c[2]?.textContent.trim()||'',
-        dia:c[3]?.textContent.trim()||'',
-        status:c[4]?.textContent.trim()||'Pendente',
-        pontos:c[5]?.textContent.trim()||'',
-        detalhes,justificativa
-      };
+      return{horario,tarefa,usuario:c[2]?.textContent.trim()||'',dia:c[3]?.textContent.trim()||'',status:c[4]?.textContent.trim()||'Pendente',pontos:c[5]?.textContent.trim()||'',detalhes,justificativa,data};
     });
 }
 
@@ -69,7 +63,7 @@ function renderCardsMonitor(){
   const dados=dadosMonitor();
   const novoHtml=!dados.length?'<div class="monitor-native-empty">Nenhuma tarefa para os filtros selecionados.</div>':dados.map(x=>{
     const[cls,label]=statusCard(x.status);
-    const flag=x.justificativa?`<button type="button" class="mon-just-flag" aria-label="Abrir justificativa de ${escUI(x.tarefa)}" title="Ver justificativa" data-task-name="${escUI(x.tarefa)}" data-user="${escUI(x.usuario)}" data-day="${escUI(x.dia)}" data-schedule="${escUI(x.horario)}" data-justification="${escUI(x.justificativa)}">🚩</button>`:'';
+    const flag=x.justificativa?`<button type="button" class="mon-just-flag" aria-label="Abrir justificativa de ${escUI(x.tarefa)}" title="Ver justificativa" data-task-name="${escUI(x.tarefa)}" data-user="${escUI(x.usuario)}" data-day="${escUI(x.dia)}" data-date="${escUI(x.data)}" data-schedule="${escUI(x.horario)}" data-justification="${escUI(x.justificativa)}">🚩</button>`:'';
     return`<article class="mon-app-card"><div class="mon-app-time">${escUI(x.horario.replace(' às ','–'))}</div><div class="mon-app-main"><span class="task-icon-badge" aria-hidden="true">${iconeTarefa(x.tarefa)}</span><div class="mon-app-copy"><strong>${escUI(x.tarefa)}</strong><span>${escUI(x.usuario)}</span></div></div><div class="mon-app-side"><span class="mon-app-status ${cls}">${escUI(label)}</span><span class="mon-app-points">${escUI(x.pontos)}</span></div><div class="mon-app-meta"><span>${escUI(x.dia)}</span><span class="real-time">${escUI(x.detalhes)}</span>${flag}</div></article>`;
   }).join('');
   if(cards.innerHTML!==novoHtml)cards.innerHTML=novoHtml;

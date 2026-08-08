@@ -499,6 +499,7 @@
                     <div style="flex: 1;">
                         <label for="filtroExclusaoDia">Dia da Semana:</label>
                         <select id="filtroExclusaoDia" onchange="renderizarTabelaExclusao()">
+                            <option value="">Todos os dias</option>
                             <option value="Domingo">Domingo</option>
                             <option value="Segunda">Segunda-feira</option>
                             <option value="Terça">Terça-feira</option>
@@ -769,8 +770,12 @@
                             horarioTermino: "",
                             pontosGanhos: 0,
                             iniciouComAtraso: false,
+                            iniciouAposLimiteFinal: false,
+                            percentualAplicado: null,
+                            faixaAtraso: "",
                             justificativaAtraso: "",
-                            tipoJustificativa: ""
+                            tipoJustificativa: "",
+                            justificativaRecusada: false
                         });
                     }
                 });
@@ -964,6 +969,21 @@
         alert('Integrante cadastrado com PIN e ID permanente.');
     };
 
+    function horarioAgendaValido(valor) {
+        return /^\d{2}:\d{2}$/.test(String(valor || ''));
+    }
+
+    function encontrarConflitoHorario({ perfilId, responsavel, dia, horaInicio, horaFim, ignorarIds = new Set() }) {
+        return tarefasCache.find(t => {
+            if(!t || ignorarIds.has(t.id)) return false;
+            const mesmoIntegrante = t.perfilId ? t.perfilId === perfilId : t.perfilNome === responsavel;
+            if(!mesmoIntegrante || t.diaSemana !== dia) return false;
+            if(!horarioAgendaValido(t.horaSugeridaInicio) || !horarioAgendaValido(t.horaSugeridaFim)) return false;
+            if(t.horaSugeridaInicio >= t.horaSugeridaFim) return false;
+            return horaInicio < t.horaSugeridaFim && horaFim > t.horaSugeridaInicio;
+        });
+    }
+
     window.salvarTarefa = async () => {
         const editId = document.getElementById('editTarefaId').value;
         const perfilIdSelecionado = document.getElementById('tarefaResponsavel').value;
@@ -1012,15 +1032,8 @@
 
             // Validação de Conflito de Horário para cada dia selecionado
             for(let dia of diasSelecionados) {
-                let conflito = tarefasCache.find(t => {
-                    // Ignora as tarefas do próprio grupo que está sendo editado
-                    if(idsRelacionados.has(t.id)) return false;
-
-                    // Apenas valida para o mesmo integrante e mesmo dia da semana
-                    if((t.perfilId ? t.perfilId !== perfilIdSelecionado : t.perfilNome !== responsavel) || t.diaSemana !== dia) return false;
-
-                    // Trava de sobreposição de horários
-                    return (horaInicio < t.horaSugeridaFim && horaFim > t.horaSugeridaInicio);
+                const conflito = encontrarConflitoHorario({
+                    perfilId: perfilIdSelecionado, responsavel, dia, horaInicio, horaFim, ignorarIds: idsRelacionados
                 });
 
                 if(conflito) {
@@ -1093,9 +1106,8 @@
         } else {
             // Criação de nova tarefa
             for(let dia of diasSelecionados) {
-                let conflito = tarefasCache.find(t => {
-                    if((t.perfilId ? t.perfilId !== perfilIdSelecionado : t.perfilNome !== responsavel) || t.diaSemana !== dia) return false;
-                    return (horaInicio < t.horaSugeridaFim && horaFim > t.horaSugeridaInicio);
+                const conflito = encontrarConflitoHorario({
+                    perfilId: perfilIdSelecionado, responsavel, dia, horaInicio, horaFim
                 });
 
                 if(conflito) {
@@ -1181,13 +1193,20 @@
     };
 
     window.excluirTarefa = async (idTarefa) => {
-        if(confirm("Tem certeza que deseja excluir esta tarefa permanentemente?")) {
-            try {
-                await deleteDoc(doc(db, "tarefas", idTarefa));
-                alert("Tarefa excluída com sucesso!");
-            } catch (error) {
-                alert("Erro ao excluir tarefa: " + error.message);
-            }
+        const alvo = tarefasCache.find(t => t.id === idTarefa);
+        if(!alvo) return alert('Tarefa não encontrada. Atualize a tela e tente novamente.');
+        const relacionadas = alvo.tarefaGrupoId
+            ? tarefasCache.filter(t => t.tarefaGrupoId === alvo.tarefaGrupoId)
+            : [alvo];
+        const dias = relacionadas.map(t => t.diaSemana).filter(Boolean).join(', ');
+        if(!confirm(`Excluir permanentemente a tarefa "${alvo.nome}" em todos os dias cadastrados${dias ? ` (${dias})` : ''}?\n\nPara remover apenas um dia, use Editar e desmarque esse dia.`)) return;
+        try {
+            const batch = writeBatch(db);
+            relacionadas.forEach(t => batch.delete(doc(db, 'tarefas', t.id)));
+            await batch.commit();
+            alert('Tarefa recorrente excluída com sucesso.');
+        } catch (error) {
+            alert('Erro ao excluir tarefa: ' + error.message);
         }
     };
 
@@ -1411,9 +1430,9 @@
             let horariosHtml = `<strong>${t.horaSugeridaInicio} - ${t.horaSugeridaFim}</strong>`;
             if(t.horarioInicio) {
                 horariosHtml += `<div style="font-size: 11px; color: #555; margin-top: 3px;">Real: ${t.horarioInicio} até ${t.horarioTermino || '--:--'} | Tol: ${t.tempoLimite || 0} min`;
-                if(statusTexto === "Atrasado" && t.justificativaAtraso) { horariosHtml += ` <span class="tooltip-justificativa">🚩 texto<span class="tooltip-texto">${escaparHtml(t.justificativaAtraso)}</span></span>`; }
-                if(statusTexto === "Atrasado" && t.justificativaRecusada === true) { horariosHtml += ` <span class="tooltip-justificativa" style="color:#6c757d;border-color:#6c757d">Usuário não quis justificar<span class="tooltip-texto">Usuário não quis justificar.</span></span>`; }
-                if(statusTexto === "Atrasado" && t.tipoJustificativa === 'voz-transcrita') { horariosHtml += ` <span title="Justificativa ditada por voz e convertida em texto">🎙️ voz→texto</span>`; }
+                if(statusTexto.includes("Atrasado") && t.justificativaAtraso) { horariosHtml += ` <span class="tooltip-justificativa">🚩 texto<span class="tooltip-texto">${escaparHtml(t.justificativaAtraso)}</span></span>`; }
+                if(statusTexto.includes("Atrasado") && t.justificativaRecusada === true) { horariosHtml += ` <span class="tooltip-justificativa" style="color:#6c757d;border-color:#6c757d">Usuário não quis justificar<span class="tooltip-texto">Usuário não quis justificar.</span></span>`; }
+                if(statusTexto.includes("Atrasado") && t.tipoJustificativa === 'voz-transcrita') { horariosHtml += ` <span title="Justificativa ditada por voz e convertida em texto">🎙️ voz→texto</span>`; }
                 horariosHtml += `</div>`;
             } else {
                 horariosHtml += `<div style="font-size: 11px; color: #999; margin-top: 3px;">Real: Não executada | Tol: ${t.tempoLimite || 0} min</div>`;

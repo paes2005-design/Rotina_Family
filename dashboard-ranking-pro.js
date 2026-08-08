@@ -1,8 +1,7 @@
 import { getApps, getApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
 import { getFirestore, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
-const app = getApps().length ? getApp() : null;
-const db = app ? getFirestore(app) : null;
+const obterDb = () => getApps().length ? getFirestore(getApp()) : null;
 let periodoAtual = 'semanal';
 let dashboardMontada = false;
 
@@ -70,15 +69,25 @@ async function carregarDados(grupoId){
 }
 
 window.renderizarDashboard=async function(){
-  montarDashboard(); if(!db) return;
+  montarDashboard(); const db=obterDb(); if(!db) return;
   const grupoId=(document.getElementById('displayCodigoCliente')?.innerText||'').trim(); if(!grupoId||grupoId==='--'||grupoId==='CLI-Gen') return;
   const root=document.getElementById('dashboardFamilia'); root.innerHTML='<div class="dashboard-kpi"><small>Atualizando</small><strong>...</strong><em>Carregando dados</em></div>';
   try{
     const {perfis,historico}=await carregarDados(grupoId),sel=document.getElementById('dashboardPerfil'),atual=sel.value;
     sel.innerHTML='<option value="">Todos</option>'+perfis.map(p=>`<option value="${esc(p.id)}">${esc(p.nome)}</option>`).join(''); if([...sel.options].some(o=>o.value===atual))sel.value=atual;
     const ref=new Date((document.getElementById('dashboardDataRef').value||iso(new Date()))+'T12:00:00'),dia=iso(ref),iniS=iso(inicioSemana(ref)),fimSD=new Date(inicioSemana(ref));fimSD.setDate(fimSD.getDate()+6);const fimS=iso(fimSD),iniM=`${ref.getFullYear()}-${String(ref.getMonth()+1).padStart(2,'0')}-01`,fimM=iso(new Date(ref.getFullYear(),ref.getMonth()+1,0));
-    const vis=perfis.filter(p=>!sel.value||p.id===sel.value).map(p=>{const h=historico.filter(x=>x.perfilId===p.id||(!x.perfilId&&x.perfilNome===p.nome)),soma=(a,b)=>h.filter(x=>x.data>=a&&x.data<=b).reduce((q,x)=>q+(Number(x.pontosGanhos)||0),0),hs=h.filter(x=>x.data>=iniS&&x.data<=fimS);return{id:p.id,nome:p.nome,hist:h,diario:soma(dia,dia),semanal:soma(iniS,fimS),mensal:soma(iniM,fimM),concluidas:hs.length,prazo:hs.filter(x=>x.status?.includes('Prazo')).length,seq:sequencia(h)}});
-    const campo=periodoAtual,ord=[...vis].sort((a,b)=>b[campo]-a[campo]),a=campo==='diario'?dia:campo==='mensal'?iniM:iniS,b=campo==='diario'?dia:campo==='mensal'?fimM:fimS,hp=historico.filter(x=>x.data>=a&&x.data<=b&&(!sel.value||x.perfilId===sel.value)),pts=ord.reduce((q,x)=>q+x[campo],0),concl=hp.length,prazo=hp.filter(x=>x.status?.includes('Prazo')).length,taxa=concl?Math.round(prazo/concl*100):0,lead=ord[0];
+    const campo=periodoAtual;
+    const periodoIni=campo==='diario'?dia:campo==='mensal'?iniM:iniS, periodoFim=campo==='diario'?dia:campo==='mensal'?fimM:fimS;
+    const vis=perfis.filter(p=>!sel.value||p.id===sel.value).map(p=>{
+      const h=historico.filter(x=>x.perfilId===p.id||(!x.perfilId&&x.perfilNome===p.nome));
+      const soma=(a,b)=>h.filter(x=>x.data>=a&&x.data<=b).reduce((q,x)=>q+(Number(x.pontosGanhos)||0),0);
+      const hpPerfil=h.filter(x=>x.data>=periodoIni&&x.data<=periodoFim);
+      return{id:p.id,nome:p.nome,hist:h,diario:soma(dia,dia),semanal:soma(iniS,fimS),mensal:soma(iniM,fimM),concluidas:hpPerfil.length,prazo:hpPerfil.filter(x=>x.status?.includes('Prazo')).length,seq:sequencia(h)};
+    });
+    const ord=[...vis].sort((a,b)=>b[campo]-a[campo]);
+    const perfilSelecionado=perfis.find(p=>p.id===sel.value);
+    const hp=historico.filter(x=>x.data>=periodoIni&&x.data<=periodoFim&&(!sel.value||x.perfilId===sel.value||(!x.perfilId&&x.perfilNome===perfilSelecionado?.nome)));
+    const pts=ord.reduce((q,x)=>q+x[campo],0),concl=hp.length,prazo=hp.filter(x=>x.status?.includes('Prazo')).length,taxa=concl?Math.round(prazo/concl*100):0,lead=ord[0];
     root.innerHTML=`<div class="dashboard-kpi"><small>🏆 Líder</small><strong>${lead?esc(lead.nome):'—'}</strong><em>${lead?lead[campo]+' pontos':'Sem dados'}</em></div><div class="dashboard-kpi"><small>⭐ Pontos do período</small><strong>${pts}</strong><em>Somatório da seleção</em></div><div class="dashboard-kpi"><small>✅ Pontualidade</small><strong>${taxa}%</strong><em>${prazo} de ${concl} concluídas</em></div><div class="dashboard-kpi"><small>🔥 Maior sequência</small><strong>${ord.length?Math.max(...ord.map(x=>x.seq)):0} dias</strong><em>Sequência atual</em></div>`;
     const top=ord.slice(0,3),slots=[top[1],top[0],top[2]],cls=['second','first','third'],med=['🥈','🥇','🥉'];document.getElementById('podioDashboard').innerHTML=slots.map((x,i)=>x?`<div class="podium-card ${cls[i]}"><div class="podium-rank">${med[i]}</div><div class="podium-name">${esc(x.nome)}</div><div class="podium-points">${x[campo]} pontos<br>🔥 ${x.seq} dias</div></div>`:'<div></div>').join('');
     document.getElementById('dashboardPeriodoLegenda').innerText=campo==='diario'?'Ranking do dia selecionado':campo==='mensal'?'Ranking do mês selecionado':'Ranking da semana selecionada';document.getElementById('graficoPontosDashboard').innerHTML=svgBarras(ord,campo);

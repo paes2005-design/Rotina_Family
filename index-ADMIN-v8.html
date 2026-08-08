@@ -608,8 +608,8 @@
     <h2 style="margin-top:0">Configurar regra de atraso</h2>
     <p style="color:#666;font-size:13px">Defina a porcentagem dos pontos em cada faixa. Os valores devem ficar em ordem decrescente.</p>
     <div class="form-group"><label>Dentro dos limites (%)</label><input id="regraPct100" type="number" min="0" max="100" value="100"></div>
-    <div class="form-group"><label>Pequeno atraso no início (%)</label><input id="regraPct75" type="number" min="0" max="100" value="75"></div>
-    <div class="form-group"><label>Atraso maior no início (%)</label><input id="regraPct50" type="number" min="0" max="100" value="50"></div>
+    <div class="form-group"><label>Tolerância excedida até +25% (%)</label><input id="regraPct75" type="number" min="0" max="100" value="75"></div>
+    <div class="form-group"><label>Tolerância excedida até +50% (%)</label><input id="regraPct50" type="number" min="0" max="100" value="50"></div>
     <div class="form-group"><label>Estourou o limite final</label><div style="padding:10px;border:1px solid #ddd;border-radius:6px;background:#f8fafc"><strong>0% fixo</strong> — iniciar ou terminar depois do limite final sempre zera a pontuação.</div><input id="regraPct0" type="hidden" value="0"></div>
     <div id="previewRegraAtrasoAdmin" style="padding:10px;background:#f8fafc;border-radius:8px;font-size:13px;margin:10px 0"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
@@ -652,10 +652,11 @@
     }
     function textoRegraAtraso(r=regraAtrasoAtual){
         return `<strong>Regra atual: ${r.dentroLimites}% / ${r.atrasoLeve}% / ${r.atrasoMaior}% / ${r.estourado}%.</strong><br>`+
-        `• Iniciou dentro da tolerância e concluiu até o limite final: <strong>${r.dentroLimites}%</strong> dos pontos.<br>`+
-        `• Iniciou após a tolerância, mas até metade de uma tolerância extra, e concluiu até o limite final: <strong>${r.atrasoLeve}%</strong>.<br>`+
-        `• Iniciou depois dessa faixa, mas ainda antes do limite final, e concluiu dentro do limite: <strong>${r.atrasoMaior}%</strong>.<br>`+
-        `• Iniciou depois do limite final ou concluiu depois dele: <strong>${r.estourado}%</strong>.<br><small>Exemplo com tolerância de 10 min: até +10 min = primeira faixa; +11 a +15 min = segunda; depois disso até o limite final = terceira.</small>`;
+        `• O saldo consumido é a soma do atraso no início com o atraso no término.<br>`+
+        `• Consumo até 100% da tolerância: <strong>${r.dentroLimites}%</strong> dos pontos.<br>`+
+        `• Consumo acima da tolerância, até +25%: <strong>${r.atrasoLeve}%</strong>.<br>`+
+        `• Consumo acima de +25%, até +50%: <strong>${r.atrasoMaior}%</strong>.<br>`+
+        `• Consumo acima de +50% da tolerância: <strong>${r.estourado}%</strong>.<br><small>Exemplo com tolerância de 10 min: até 10 min consumidos = primeira faixa; 11 a 13 = segunda; 14 a 15 = terceira; acima de 15 = 0%. O cálculo usa minutos completos.</small>`;
     }
     function atualizarExplicacaoRegraAtrasoAdmin(){
         const el=document.getElementById('explicacaoRegraAtrasoAdmin'); if(el) el.innerHTML=textoRegraAtraso();
@@ -1330,8 +1331,7 @@
 
         let ganhoDia = 0, ganhoSemana = 0, ganhoMes = 0;
         historicoLista.forEach((h) => {
-            if(!h.status || !h.status.includes("Prazo")) return;
-            const pts = h.pontosGanhos || 0;
+            const pts = Number(h.pontosGanhos) || 0;
             if(h.data === dataReferenciaISO) ganhoDia += pts;
             if(h.data >= inicioSemanaISO && h.data <= dataReferenciaISO) ganhoSemana += pts;
             const [anoH, mesH] = (h.data || "0-0-0").split('-').map(Number);

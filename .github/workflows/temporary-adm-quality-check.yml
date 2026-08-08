@@ -35,10 +35,18 @@ jobs:
           assert(!review.includes('MutationObserver'),'review module adds no mutation observer');
           assert(!mobile.includes("adm-enhancements.js"),'known freezing enhancement is not imported');
           assert(!sw.includes("adm-enhancements.js"),'known freezing enhancement is outside app shell');
-          assert(sw.includes("network")||sw.includes("cache:'no-store'"),'app code is refreshed network-first');
+          assert(sw.includes("cache:'no-store'"),'app code is refreshed network-first');
           assert(manifest.start_url.includes('index-ADMIN-v8.html'),'installed ADM starts directly on real page');
           assert(sw.includes('APP_MAIN_URL'),'legacy root navigation is redirected by service worker');
           assert(mobile.includes("MOBILE_QUERY.matches"),'mobile-only UI is gated by viewport');
+
+          // Regra explicada e totalizadores coerentes
+          assert(html.includes('O saldo consumido é a soma do atraso no início com o atraso no término.'),'ADM explains shared tolerance balance');
+          assert(html.includes('Tolerância excedida até +25%'),'ADM 75% band label matches current rule');
+          assert(html.includes('Tolerância excedida até +50%'),'ADM 50% band label matches current rule');
+          assert(html.includes('Tolerância excedida acima de +50%'),'ADM 0% band label matches current rule');
+          assert(!html.includes('iniciar ou terminar depois do limite final sempre zera'),'old final-limit wording is gone');
+          assert(!html.includes('if(!h.status || !h.status.includes("Prazo")) return;'),'Monitor points do not discard reviewed late-task points');
 
           // Monitor mobile / justificativa
           assert(mobile.includes('mon-just-flag'),'justification is a dedicated clickable flag');

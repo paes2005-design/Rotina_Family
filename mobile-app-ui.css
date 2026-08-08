@@ -21,6 +21,13 @@
   .ger-task-card .task-icon-badge{width:34px;height:34px;font-size:18px}
   .ger-task-card{grid-template-columns:auto auto minmax(0,1fr) auto!important}.ger-task-card .task-icon-badge{grid-column:2}.ger-task-card .ger-main{grid-column:3}.ger-task-card .ger-more{grid-column:4}.ger-task-card .ger-card-actions{grid-column:1/-1}
 
+  /* Ranking detalhado: a regra geral .tabela-scroll table usa min-width:640px.
+     No celular isso empurrava os valores para fora do cartão. */
+  #rankingDetalhadoDashboard .ranking-table-pro{min-width:0!important;width:100%!important;max-width:100%!important}
+  #rankingDetalhadoDashboard .ranking-table-pro tbody,
+  #rankingDetalhadoDashboard .ranking-table-pro tr,
+  #rankingDetalhadoDashboard .ranking-table-pro td{min-width:0!important;max-width:100%!important;box-sizing:border-box!important}
+
   .mobile-bottom-nav{position:fixed;left:8px;right:8px;bottom:max(8px,env(safe-area-inset-bottom));z-index:11000;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:3px;background:rgba(255,255,255,.96);border:1px solid #dfe5ec;border-radius:18px;padding:7px 6px;box-shadow:0 12px 35px rgba(15,23,42,.18);backdrop-filter:blur(10px);box-sizing:border-box;max-width:620px;margin:auto}
   .mobile-bottom-nav button{min-width:0;border:0;background:transparent;border-radius:12px;padding:7px 2px 6px;display:grid;justify-items:center;gap:3px;color:#64748b;font-size:9px;font-weight:700;cursor:pointer;overflow:hidden}.mobile-bottom-nav .nav-ico{font-size:18px;line-height:1}.mobile-bottom-nav .nav-label{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mobile-bottom-nav button.active{background:#efedff;color:#5138cc}.mobile-bottom-nav button.active .nav-ico{transform:translateY(-1px)}
 }

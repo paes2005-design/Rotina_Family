@@ -1,5 +1,5 @@
 import { getApps, getApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getFirestore, collection, query, where, getDocs } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { getFirestore, collection, query, where, getDocs, doc, writeBatch } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 
 const obterDb = () => getApps().length ? getFirestore(getApp()) : null;
 let periodoAtual = 'semanal';
@@ -97,4 +97,94 @@ window.renderizarDashboard=async function(){
   }catch(e){console.error('Dashboard ranking:',e);root.innerHTML='<div class="dashboard-kpi"><small>Dashboard</small><strong>Não foi possível carregar</strong><em>Atualize a página e tente novamente.</em></div>'}
 };
 
-window.addEventListener('DOMContentLoaded',montarDashboard);
+const ordemDiasRecorrencia=['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+let exclusaoRecorrenteContexto=null;
+
+function fecharModalExclusaoRecorrente(){
+  const modal=document.getElementById('modalExclusaoRecorrente');
+  if(modal) modal.style.display='none';
+  exclusaoRecorrenteContexto=null;
+}
+
+function garantirModalExclusaoRecorrente(){
+  if(document.getElementById('modalExclusaoRecorrente')) return;
+  const modal=document.createElement('div');
+  modal.id='modalExclusaoRecorrente';
+  modal.style.cssText='display:none;position:fixed;inset:0;background:rgba(15,23,42,.58);z-index:12000;align-items:center;justify-content:center;padding:16px;backdrop-filter:blur(2px)';
+  modal.innerHTML=`
+    <div style="background:#fff;width:min(520px,100%);border-radius:18px;padding:22px;box-shadow:0 24px 70px rgba(15,23,42,.28)">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px">
+        <div><div style="font-size:12px;font-weight:800;letter-spacing:.06em;color:#64748b;text-transform:uppercase">Tarefa recorrente</div><h2 style="margin:5px 0 7px;color:#1e293b">O que você deseja excluir?</h2></div>
+        <button id="fecharExclusaoRecorrente" aria-label="Fechar" style="border:0;background:#f1f5f9;color:#475569;width:34px;height:34px;border-radius:50%;font-size:20px;cursor:pointer">×</button>
+      </div>
+      <p id="textoExclusaoRecorrente" style="margin:0 0 16px;color:#64748b;line-height:1.5"></p>
+      <div style="display:grid;gap:10px">
+        <button data-exclusao="esta" style="text-align:left;border:1px solid #dbe3ec;background:#fff;border-radius:13px;padding:13px 15px;cursor:pointer"><strong style="display:block;color:#1e293b">Somente esta ocorrência</strong><span style="font-size:12px;color:#64748b">Remove apenas o dia selecionado desta tarefa.</span></button>
+        <button data-exclusao="frente" style="text-align:left;border:1px solid #dbe3ec;background:#fff;border-radius:13px;padding:13px 15px;cursor:pointer"><strong style="display:block;color:#1e293b">Esta e as próximas</strong><span style="font-size:12px;color:#64748b">Remove esta ocorrência e as seguintes na sequência semanal cadastrada.</span></button>
+        <button data-exclusao="todas" style="text-align:left;border:1px solid #fecaca;background:#fff7f7;border-radius:13px;padding:13px 15px;cursor:pointer"><strong style="display:block;color:#b91c1c">Todas as ocorrências</strong><span style="font-size:12px;color:#7f1d1d">Remove completamente esta tarefa recorrente.</span></button>
+      </div>
+      <button id="cancelarExclusaoRecorrente" style="margin-top:14px;width:100%;border:0;background:#f1f5f9;color:#475569;border-radius:12px;padding:11px;font-weight:700;cursor:pointer">Cancelar</button>
+    </div>`;
+  document.body.appendChild(modal);
+  document.getElementById('fecharExclusaoRecorrente').onclick=fecharModalExclusaoRecorrente;
+  document.getElementById('cancelarExclusaoRecorrente').onclick=fecharModalExclusaoRecorrente;
+  modal.addEventListener('click',e=>{if(e.target===modal)fecharModalExclusaoRecorrente();});
+  modal.querySelectorAll('[data-exclusao]').forEach(btn=>btn.addEventListener('click',()=>executarExclusaoRecorrente(btn.dataset.exclusao)));
+}
+
+async function executarExclusaoRecorrente(tipo){
+  const ctx=exclusaoRecorrenteContexto;
+  if(!ctx) return;
+  const db=obterDb(); if(!db) return alert('Banco de dados ainda não está disponível. Atualize a página e tente novamente.');
+  let alvos=[];
+  if(tipo==='esta') alvos=[ctx.alvo];
+  else if(tipo==='todas') alvos=[...ctx.relacionadas];
+  else {
+    const indiceSelecionado=ordemDiasRecorrencia.indexOf(ctx.alvo.diaSemana);
+    alvos=ctx.relacionadas.filter(t=>{
+      const i=ordemDiasRecorrencia.indexOf(t.diaSemana);
+      return indiceSelecionado<0 || i>=indiceSelecionado;
+    });
+  }
+  if(!alvos.length) return fecharModalExclusaoRecorrente();
+  try{
+    const batch=writeBatch(db);
+    alvos.forEach(t=>batch.delete(doc(db,'tarefas',t.id)));
+    await batch.commit();
+    fecharModalExclusaoRecorrente();
+    const descricao=tipo==='esta'?'Esta ocorrência foi excluída.':tipo==='frente'?'Esta ocorrência e as próximas foram excluídas.':'Todas as ocorrências da tarefa foram excluídas.';
+    alert(descricao);
+  }catch(e){
+    console.error('Exclusão recorrente:',e);
+    alert('Não foi possível excluir a tarefa. Tente novamente.');
+  }
+}
+
+window.excluirTarefa=async function(idTarefa){
+  const db=obterDb(); if(!db) return alert('Banco de dados ainda não está disponível. Atualize a página e tente novamente.');
+  const grupoId=(document.getElementById('displayCodigoCliente')?.innerText||'').trim();
+  if(!grupoId||grupoId==='--'||grupoId==='CLI-Gen') return alert('Grupo da família não identificado.');
+  try{
+    const snap=await getDocs(query(collection(db,'tarefas'),where('grupoId','==',grupoId)));
+    const tarefas=snap.docs.map(d=>({id:d.id,...d.data()}));
+    const alvo=tarefas.find(t=>t.id===idTarefa);
+    if(!alvo) return alert('Tarefa não encontrada. Atualize a tela e tente novamente.');
+    const relacionadas=alvo.tarefaGrupoId?tarefas.filter(t=>t.tarefaGrupoId===alvo.tarefaGrupoId):[alvo];
+    if(relacionadas.length<=1){
+      if(!confirm(`Excluir a tarefa "${alvo.nome}" de ${alvo.diaSemana||'este dia'}?`)) return;
+      const batch=writeBatch(db); batch.delete(doc(db,'tarefas',alvo.id)); await batch.commit();
+      alert('Tarefa excluída com sucesso.');
+      return;
+    }
+    garantirModalExclusaoRecorrente();
+    exclusaoRecorrenteContexto={alvo,relacionadas};
+    const dias=relacionadas.slice().sort((a,b)=>ordemDiasRecorrencia.indexOf(a.diaSemana)-ordemDiasRecorrencia.indexOf(b.diaSemana)).map(t=>t.diaSemana).join(', ');
+    document.getElementById('textoExclusaoRecorrente').innerHTML=`A tarefa <strong>${esc(alvo.nome)}</strong> está cadastrada em mais de um dia (${esc(dias)}). Você selecionou <strong>${esc(alvo.diaSemana||'esta ocorrência')}</strong>.`;
+    document.getElementById('modalExclusaoRecorrente').style.display='flex';
+  }catch(e){
+    console.error('Preparação da exclusão:',e);
+    alert('Não foi possível carregar as ocorrências desta tarefa. Tente novamente.');
+  }
+};
+
+window.addEventListener('DOMContentLoaded',()=>{montarDashboard();garantirModalExclusaoRecorrente();});

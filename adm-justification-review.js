@@ -7,6 +7,7 @@ let salvando=false;
 
 function db(){return getApps().length?getFirestore(getApp()):null;}
 function grupo(){return (document.getElementById('displayCodigoCliente')?.textContent||'').trim();}
+function dataSelecionada(){return document.getElementById('filtroData')?.value||'';}
 function parseHorario(txt=''){
   const m=String(txt).match(/(\d{2}:\d{2}).*?(\d{2}:\d{2})/);
   return m?{inicio:m[1],fim:m[2]}:{inicio:'',fim:''};
@@ -51,7 +52,7 @@ async function localizarTarefa(ctx){
   if(ctx.id){const s=await getDoc(doc(banco,'tarefas',ctx.id));if(s.exists())return{id:s.id,...s.data()};}
   const snap=await getDocs(query(collection(banco,'tarefas'),where('grupoId','==',g)));
   const horario=parseHorario(ctx.horario||ctx.schedule||'');
-  let lista=snap.docs.map(d=>({id:d.id,...d.data()})).filter(t=>
+  const lista=snap.docs.map(d=>({id:d.id,...d.data()})).filter(t=>
     (!ctx.tarefa||t.nome===ctx.tarefa)&&
     (!ctx.usuario||t.perfilNome===ctx.usuario)&&
     (!ctx.dia||t.diaSemana===ctx.dia)&&
@@ -72,15 +73,17 @@ function montarAcoes(t){
 async function abrir(ctx={}){
   const m=garantirModal();
   const msg=m.querySelector('#admReviewMsg');
+  const data=ctx.data||dataSelecionada();
   m.style.display='flex';msg.textContent='Carregando ocorrência…';m.querySelector('#admReviewAcoes').innerHTML='';
   m.querySelector('#admReviewTexto').textContent=ctx.justificativa||'Carregando…';
   try{
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(data))throw new Error('Selecione a data da ocorrência no Monitor antes de revisar.');
     const t=await localizarTarefa(ctx);if(!t)throw new Error('Não foi possível localizar esta tarefa.');
     const justificativa=(t.justificativaAtraso||ctx.justificativa||'').trim();
-    contextoAtual={tarefa:t};
+    contextoAtual={tarefa:t,data};
     const a=montarAcoes(t);
     m.querySelector('#admReviewTitulo').textContent=t.nome||'Revisar ocorrência';
-    m.querySelector('#admReviewResumo').innerHTML=`<strong>${esc(t.perfilNome||ctx.usuario||'Integrante')}</strong> · ${esc(t.diaSemana||ctx.dia||'')}<br>${esc(t.horaSugeridaInicio||'--:--')}–${esc(t.horaSugeridaFim||'--:--')}`;
+    m.querySelector('#admReviewResumo').innerHTML=`<strong>${esc(t.perfilNome||ctx.usuario||'Integrante')}</strong> · ${esc(t.diaSemana||ctx.dia||'')} · ${esc(data.split('-').reverse().join('/'))}<br>${esc(t.horaSugeridaInicio||'--:--')}–${esc(t.horaSugeridaFim||'--:--')}`;
     m.querySelector('#admReviewTexto').textContent=justificativa||'Nenhuma justificativa em texto foi encontrada.';
     m.querySelector('#admReviewOriginal').innerHTML=`Resultado automático preservado: <strong>${esc(t.status||'—')}</strong> · <strong>${a.originalPts}/${a.max} pts</strong>${a.rev?`<br>Revisão atual: <strong>${a.atual}/${a.max} pts</strong> · devolvidos ${Number(t.pontosDevolvidos)||0} pts`:''}`;
     m.querySelector('#admReviewAcoes').innerHTML=justificativa?a.html:'<div style="grid-column:1/-1;color:#64748b;font-size:12px">Sem justificativa enviada, não há pontos para revisar por este fluxo.</div>';
@@ -88,15 +91,21 @@ async function abrir(ctx={}){
   }catch(e){console.error('Revisão de justificativa:',e);msg.textContent=e.message||'Não foi possível carregar a justificativa.';}
 }
 
-async function docsRelacionados(banco,t){
-  const data=t.dataExecucao||String(t.terminoExecutadoEm||t.inicioExecutadoEm||'').slice(0,10)||'';
-  const perfilId=t.perfilId||'';
-  const [hs,es]=await Promise.all([
-    getDocs(query(collection(banco,'historico'),where('tarefaId','==',t.id))),
-    getDocs(query(collection(banco,'execucoes'),where('tarefaId','==',t.id)))
-  ]);
-  const filtrar=s=>s.docs.filter(d=>{const x=d.data();return(!data||x.data===data||x.dataExecucao===data)&&(!perfilId||!x.perfilId||x.perfilId===perfilId);});
-  return {hist:filtrar(hs),exec:filtrar(es)};
+async function docsRelacionados(banco,t,data){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(data))throw new Error('Data da ocorrência inválida.');
+  const hist=[];const exec=[];
+  if(t.perfilId){
+    const h=await getDoc(doc(banco,'historico',`${t.perfilId}_${t.id}_${data}`));
+    if(h.exists())hist.push(h);
+  }
+  const e=await getDoc(doc(banco,'execucoes',`${data}__${t.id}`));
+  if(e.exists())exec.push(e);
+  // Compatibilidade com históricos antigos cujo perfilId ou ID determinístico ainda não existia.
+  if(!hist.length){
+    const hs=await getDocs(query(collection(banco,'historico'),where('tarefaId','==',t.id)));
+    hs.docs.filter(d=>{const x=d.data();return x.data===data&&(!t.perfilId||!x.perfilId||x.perfilId===t.perfilId);}).forEach(d=>hist.push(d));
+  }
+  return {hist,exec};
 }
 
 async function salvarRevisao(tipo,pct){
@@ -104,34 +113,33 @@ async function salvarRevisao(tipo,pct){
   salvando=true;
   const m=garantirModal(),msg=m.querySelector('#admReviewMsg'),buttons=[...m.querySelectorAll('#admReviewAcoes button')];buttons.forEach(b=>b.disabled=true);msg.textContent='Salvando revisão…';
   try{
-    const banco=db(),t=contextoAtual.tarefa;if(!banco)throw new Error('Firebase ainda não está disponível.');
-    const originalPts=pontosOriginais(t),originalPct=pctOriginal(t),max=Number(t.pontosMaximos)||0;
+    const banco=db(),t=contextoAtual.tarefa,data=contextoAtual.data;if(!banco)throw new Error('Firebase ainda não está disponível.');
+    const rel=await docsRelacionados(banco,t,data);
+    if(!rel.hist.length)throw new Error('Histórico desta ocorrência não foi encontrado; nenhuma pontuação foi alterada.');
+    const histBase=rel.hist[0].data();
+    const originalPts=Number.isFinite(Number(histBase.pontosOriginais))?Number(histBase.pontosOriginais):(Number(histBase.pontosGanhos)||0);
+    const originalPct=Number.isFinite(Number(histBase.percentualOriginal))?Number(histBase.percentualOriginal):(Number.isFinite(Number(histBase.percentualAplicado))?Number(histBase.percentualAplicado):(Number(histBase.pontosMaximos)?Math.round(originalPts/Number(histBase.pontosMaximos)*100):0));
+    const max=Number(histBase.pontosMaximos??t.pontosMaximos)||0;
     const alvoPct=tipo==='manter'?originalPct:Math.max(originalPct,Number(pct)||0);
     const novosPts=tipo==='manter'?originalPts:Math.max(originalPts,pontosPara(max,alvoPct));
     const devolvidos=Math.max(0,novosPts-originalPts);
     const agora=new Date().toISOString();
     const decisao=tipo==='manter'?'resultado-mantido':alvoPct>=100?'devolucao-total':`devolucao-${alvoPct}`;
-    const patch={
-      pontosGanhos:novosPts,
-      pontosOriginais:originalPts,
-      percentualOriginal:originalPct,
-      percentualRevisado:alvoPct,
-      pontosDevolvidos:devolvidos,
-      revisaoStatus:'revisado',
-      revisaoDecisao:decisao,
-      revisadoEm:agora
-    };
-    const rel=await docsRelacionados(banco,t),batch=writeBatch(banco);
-    batch.update(doc(banco,'tarefas',t.id),patch);
+    const patch={pontosGanhos:novosPts,pontosOriginais:originalPts,percentualOriginal:originalPct,percentualRevisado:alvoPct,pontosDevolvidos:devolvidos,revisaoStatus:'revisado',revisaoDecisao:decisao,revisadoEm:agora};
+    const batch=writeBatch(banco);
+    // Atualiza a tarefa atual apenas se a revisão for da execução que ela ainda representa.
+    const dataTarefa=String(t.dataExecucao||t.terminoExecutadoEm||t.inicioExecutadoEm||'').slice(0,10);
+    const mesmaExecucao=!dataTarefa||dataTarefa===data;
+    if(mesmaExecucao)batch.update(doc(banco,'tarefas',t.id),patch);
     rel.hist.forEach(d=>batch.update(d.ref,patch));
     rel.exec.forEach(d=>batch.update(d.ref,patch));
     await batch.commit();
     contextoAtual.tarefa={...t,...patch};
     msg.textContent=tipo==='manter'?'Revisão salva: resultado automático mantido.':`Revisão salva: ${devolvidos} ponto(s) devolvido(s).`;
-    const a=montarAcoes(contextoAtual.tarefa);m.querySelector('#admReviewOriginal').innerHTML=`Resultado automático preservado: <strong>${esc(t.status||'—')}</strong> · <strong>${originalPts}/${max} pts</strong><br>Revisão atual: <strong>${novosPts}/${max} pts</strong> · devolvidos ${devolvidos} pts`;
-    m.querySelector('#admReviewAcoes').innerHTML=a.html;
+    m.querySelector('#admReviewOriginal').innerHTML=`Resultado automático preservado: <strong>${esc(histBase.status||t.status||'—')}</strong> · <strong>${originalPts}/${max} pts</strong><br>Revisão atual: <strong>${novosPts}/${max} pts</strong> · devolvidos ${devolvidos} pts`;
+    m.querySelector('#admReviewAcoes').innerHTML=montarAcoes({...t,...patch,pontosMaximos:max}).html;
     setTimeout(()=>{if(document.getElementById('admReviewJustModal')?.style.display==='flex')fecharModal();},900);
-  }catch(e){console.error('Salvar revisão:',e);msg.textContent='Não foi possível salvar a revisão. Tente novamente.';buttons.forEach(b=>b.disabled=false);}
+  }catch(e){console.error('Salvar revisão:',e);msg.textContent=e.message||'Não foi possível salvar a revisão. Tente novamente.';buttons.forEach(b=>b.disabled=false);}
   finally{salvando=false;}
 }
 
@@ -141,13 +149,13 @@ document.addEventListener('click',e=>{
   const mobile=e.target.closest?.('.mon-just-flag');
   if(mobile){
     e.preventDefault();
-    abrir({tarefa:mobile.dataset.taskName||'',usuario:mobile.dataset.user||'',dia:mobile.dataset.day||'',horario:mobile.dataset.schedule||'',justificativa:mobile.dataset.justification||''});
+    abrir({tarefa:mobile.dataset.taskName||'',usuario:mobile.dataset.user||'',dia:mobile.dataset.day||'',horario:mobile.dataset.schedule||'',justificativa:mobile.dataset.justification||'',data:mobile.dataset.date||''});
     return;
   }
   const flag=e.target.closest?.('.tooltip-justificativa');
   if(flag){
     e.preventDefault();
     const r=flag.closest('tr'),c=r?.children;if(!c||c.length<4)return;
-    abrir({tarefa:c[1]?.querySelector('strong')?.textContent.trim()||c[1]?.textContent.trim()||'',usuario:c[2]?.textContent.trim()||'',dia:c[3]?.textContent.trim()||'',horario:c[0]?.querySelector('strong')?.textContent.trim()||'',justificativa:flag.querySelector('.tooltip-texto')?.textContent.trim()||''});
+    abrir({tarefa:c[1]?.querySelector('strong')?.textContent.trim()||c[1]?.textContent.trim()||'',usuario:c[2]?.textContent.trim()||'',dia:c[3]?.textContent.trim()||'',horario:c[0]?.querySelector('strong')?.textContent.trim()||'',justificativa:flag.querySelector('.tooltip-texto')?.textContent.trim()||'',data:dataSelecionada()});
   }
 });

@@ -1,0 +1,48 @@
+name: Manual icons branch test
+on:
+  push:
+    branches:
+      - test/manual-icons
+    paths:
+      - .github/workflows/manual-icons-branch-test.yml
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: test/manual-icons
+      - name: Syntax and manual icon regression
+        run: |
+          node --check dashboard-ranking-pro.js
+          node --check monitor-pro.js
+          node --check manage-pro.js
+          node --check mobile-app-ui.js
+          node --check adm-justification-review.js
+          node --check sw.js
+          node <<'NODE'
+          const fs=require('fs');
+          const html=fs.readFileSync('index-ADMIN-v8.html','utf8');
+          const mobile=fs.readFileSync('mobile-app-ui.js','utf8');
+          const manage=fs.readFileSync('manage-pro.js','utf8');
+          const review=fs.readFileSync('adm-justification-review.js','utf8');
+          const assert=(v,m)=>{if(!v)throw new Error(m);console.log('OK - '+m)};
+          const icons=['✅','🎮','📺','🧸','📱','💻','🛏️','🪥','🚿','📖','🎒','📚','🧹','🍽️','👕','🗑️','🐾','💊','🏃','🍴','🙏','🎵','🚗','🛒'];
+          assert(html.includes('id="iconeTarefa"'),'manual icon selector exists');
+          icons.forEach(i=>assert(html.includes(`value="${i}"`),`icon ${i} is selectable`));
+          assert(!html.includes('>Automático<')&&!html.includes('>Automatica<'),'no automatic selector option is exposed');
+          assert((html.match(/icone: iconeTarefaSelecionado/g)||[]).length===3,'icon is persisted in create and recurring edit writes');
+          assert(html.includes("document.getElementById('iconeTarefa').value = normalizarIconeTarefa(t.icone, t.nome)"),'editing restores saved icon');
+          assert((html.match(/task-icon-cell/g)||[]).length>=3,'ADM tables render icon before task name');
+          assert(html.includes("return ICONES_TAREFA_PERMITIDOS.has(valor) ? valor : iconeTarefaLegado(nome)"),'explicit valid icon always wins over task name');
+          assert(mobile.includes("const icone=c[1]?.querySelector('.task-icon-cell')"),'mobile Monitor reads persisted icon');
+          assert(mobile.includes('x.icone||iconeTarefa(x.tarefa)'),'mobile automatic logic is legacy fallback only');
+          assert(manage.includes("const icone=celTarefa?.querySelector('.task-icon-cell')"),'Gerenciar reads persisted icon');
+          assert(manage.includes("${escG(x.icone||'✅')}"),'Gerenciar renders selected icon');
+          assert(!review.includes('setInterval(')&&!review.includes('MutationObserver'),'justification review stability remains intact');
+          assert(!mobile.includes('adm-enhancements.js'),'known freezing enhancement stays disabled');
+          for(const f of ['salvarTarefa','preencherEdicaoTarefa','cancelarEdicaoTarefa','excluirTarefa','atualizarMonitor','renderizarDashboard']) assert(html.includes(f),`core flow ${f} remains`);
+          assert(html.includes('justificativaObrigatoria'),'justification configuration remains');
+          assert(html.includes('O saldo consumido é a soma do atraso no início com o atraso no término.'),'shared tolerance rule remains');
+          console.log('ALL ADM MANUAL ICON BRANCH TESTS PASSED');
+          NODE

@@ -1,5 +1,7 @@
 .mobile-bottom-nav,.monitor-native-cards{display:none}
 @media(max-width:780px){
+  /* Evita o flash da tela de logo/login enquanto o Firebase restaura uma sessão já autenticada. */
+  #telaAcesso{display:none}
   body{padding:12px!important;padding-bottom:calc(86px + env(safe-area-inset-bottom))!important;overflow-x:hidden!important}
   #sistemaPrincipal,.tab-content,#monitor,#cadastro,#dashboard,#recompensas{width:100%!important;max-width:100%!important;min-width:0!important;box-sizing:border-box!important}
   .tab-content{padding:14px!important;border-radius:15px!important;overflow:hidden!important}

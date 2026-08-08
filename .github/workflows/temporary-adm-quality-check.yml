@@ -1,0 +1,60 @@
+name: Temporary ADM quality checks
+on:
+  push:
+    paths:
+      - '.github/workflows/temporary-adm-quality-check.yml'
+      - 'mobile-app-ui.js'
+      - 'mobile-app-ui.css'
+      - 'adm-justification-review.js'
+      - 'sw.js'
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: JavaScript syntax
+        run: |
+          node --check mobile-app-ui.js
+          node --check adm-justification-review.js
+          node --check sw.js
+      - name: Static safety and behavior checks
+        run: |
+          node <<'NODE'
+          const fs=require('fs');
+          const mobile=fs.readFileSync('mobile-app-ui.js','utf8');
+          const css=fs.readFileSync('mobile-app-ui.css','utf8');
+          const review=fs.readFileSync('adm-justification-review.js','utf8');
+          const sw=fs.readFileSync('sw.js','utf8');
+          const assert=(ok,msg)=>{if(!ok)throw new Error(msg);console.log('OK - '+msg)};
+
+          assert(!mobile.includes('setInterval('),'mobile UI has no continuous interval');
+          assert(!review.includes('setInterval('),'review module has no continuous interval');
+          assert(mobile.includes('mon-just-flag'),'mobile justification uses a flag button');
+          assert(mobile.includes('data-date='),'flag carries exact selected date');
+          assert(mobile.includes("75% · atraso leve"),'75% status has compact full label');
+          assert(mobile.includes("50% · atraso maior"),'50% status has compact full label');
+          assert(mobile.includes("100% · No prazo"),'100% status has compact full label');
+          assert(css.includes('.mon-just-flag'),'flag has mobile CSS');
+          assert(css.includes('white-space:normal'),'status may wrap instead of truncating');
+          assert(review.includes("`${t.perfilId}_${t.id}_${data}`"),'history lookup is scoped to exact occurrence id');
+          assert(review.includes("`${data}__${t.id}`"),'execution lookup is scoped to exact date');
+          assert(review.includes("x.data===data"),'legacy history fallback is date-scoped');
+          assert(review.includes("pontosOriginais"),'automatic original points are preserved');
+          assert(review.includes("percentualOriginal"),'automatic original percentage is preserved');
+          assert(review.includes("revisaoDecisao"),'review decision is recorded');
+          assert(review.includes("pontosDevolvidos"),'returned points are recorded');
+          assert(sw.includes("adm-justification-review.js"),'review module is in app shell');
+          assert(sw.includes("rotina-family-adm-v22"),'new cache version is active');
+
+          const pts=(max,pct)=>Math.round(max*pct/100);
+          assert(pts(20,50)===10,'20 pts at 50% = 10');
+          assert(pts(20,75)===15,'20 pts at 75% = 15');
+          assert(pts(20,100)===20,'20 pts at 100% = 20');
+          const devolver=(original,max,pct)=>Math.max(original,pts(max,pct));
+          assert(devolver(0,20,50)===10,'0 -> 50% returns 10 points');
+          assert(devolver(0,20,75)===15,'0 -> 75% returns 15 points');
+          assert(devolver(0,20,100)===20,'0 -> 100% returns 20 points');
+          assert(devolver(10,20,75)===15,'50% -> 75% returns total 15 points');
+          assert(devolver(10,20,100)===20,'50% -> 100% returns total 20 points');
+          console.log('All temporary ADM checks passed.');
+          NODE

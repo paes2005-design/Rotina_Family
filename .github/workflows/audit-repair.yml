@@ -1,0 +1,47 @@
+name: Audit repair ADM
+on:
+  push:
+    paths:
+      - .github/workflows/audit-repair.yml
+permissions:
+  contents: write
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply audited fixes
+        run: python .github/scripts/audit_repair.py
+      - name: Validate dashboard JavaScript
+        run: node --check dashboard-ranking-pro.js
+      - name: Validate inline JavaScript syntax
+        run: |
+          node - <<'NODE'
+          const fs=require('fs');
+          const s=fs.readFileSync('index-ADMIN-v8.html','utf8');
+          for(const m of s.matchAll(/<script(?: type="module")?>([\s\S]*?)<\/script>/g)){
+            const code=m[1].replace(/^\s*import .*$/mg,'');
+            new Function(code);
+          }
+          NODE
+      - name: Test overlap boundaries
+        run: |
+          node - <<'NODE'
+          const conflict=(a,b,c,d)=>a<d&&b>c;
+          const tests=[
+            ['08:00','09:00','09:00','10:00',false],
+            ['08:00','09:01','09:00','10:00',true],
+            ['08:30','08:45','08:00','09:00',true],
+            ['07:00','08:30','08:00','09:00',true],
+            ['07:00','10:00','08:00','09:00',true]
+          ];
+          for(const [a,b,c,d,e] of tests){ if(conflict(a,b,c,d)!==e) process.exit(1); }
+          NODE
+      - name: Commit fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index-ADMIN-v8.html dashboard-ranking-pro.js
+          git commit -m "Fix schedule conflict handling and audit ADM rules"
+          git pull --rebase origin main
+          git push

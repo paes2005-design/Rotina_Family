@@ -2,6 +2,8 @@ const escUI=(v='')=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>'
 
 // Revisão de justificativas/pontos: módulo isolado, sem timer contínuo nem observer próprio.
 import('./adm-justification-review.js').catch(e=>console.error('Revisão de justificativa:',e));
+// Início antecipado: selo informativo azul e motivo em leitura, sem alterar pontos.
+import('./adm-early-start-ui.js').catch(e=>console.error('Início antecipado ADM:',e));
 
 // Interface móvel: no desktop não monta cartões, navegação ou observers.
 const MOBILE_QUERY=window.matchMedia('(max-width: 780px)');
@@ -39,13 +41,15 @@ function dadosMonitor(){
       const horario=c[0]?.querySelector('strong')?.textContent.trim()||c[0]?.textContent.trim().split('|')[0]||'';
       const detalheOriginal=c[0]?.querySelector('div');
       const justificativa=detalheOriginal?.querySelector('.tooltip-justificativa .tooltip-texto')?.textContent.trim()||'';
+      const early=c[4]?.querySelector('.early-start-adm-badge');
       let detalhes='';
       if(detalheOriginal){
         const clone=detalheOriginal.cloneNode(true);
         clone.querySelectorAll('.tooltip-justificativa,[title*="Justificativa"]').forEach(x=>x.remove());
         detalhes=(clone.textContent||'').replace(/\s+/g,' ').trim();
       }
-      return{horario,tarefa,icone,usuario:c[2]?.textContent.trim()||'',dia:c[3]?.textContent.trim()||'',status:c[4]?.textContent.trim()||'Pendente',pontos:c[5]?.textContent.trim()||'',detalhes,justificativa,data};
+      const status=c[4]?.querySelector('.badge')?.textContent.trim()||c[4]?.textContent.trim()||'Pendente';
+      return{horario,tarefa,icone,usuario:c[2]?.textContent.trim()||'',dia:c[3]?.textContent.trim()||'',status,pontos:c[5]?.textContent.trim()||'',detalhes,justificativa,data,inicioAntecipado:!!early,motivoInicioAntecipado:early?.dataset.earlyReason||'',antecipacaoMin:early?.dataset.earlyMinutes||'',dataAntecipacao:early?.dataset.date||data};
     });
 }
 
@@ -65,10 +69,12 @@ function renderCardsMonitor(){
   const novoHtml=!dados.length?'<div class="monitor-native-empty">Nenhuma tarefa para os filtros selecionados.</div>':dados.map(x=>{
     const[cls,label]=statusCard(x.status);
     const flag=x.justificativa?`<button type="button" class="mon-just-flag" aria-label="Abrir justificativa de ${escUI(x.tarefa)}" title="Ver justificativa" data-task-name="${escUI(x.tarefa)}" data-user="${escUI(x.usuario)}" data-day="${escUI(x.dia)}" data-date="${escUI(x.data)}" data-schedule="${escUI(x.horario)}" data-justification="${escUI(x.justificativa)}">🚩</button>`:'';
-    return`<article class="mon-app-card"><div class="mon-app-time">${escUI(x.horario.replace(' às ','–'))}</div><div class="mon-app-main"><span class="task-icon-badge" aria-hidden="true">${escUI(x.icone||iconeTarefa(x.tarefa))}</span><div class="mon-app-copy"><strong>${escUI(x.tarefa)}</strong><span>${escUI(x.usuario)}</span></div></div><div class="mon-app-side"><span class="mon-app-status ${cls}">${escUI(label)}</span><span class="mon-app-points">${escUI(x.pontos)}</span></div><div class="mon-app-meta"><span>${escUI(x.dia)}</span><span class="real-time">${escUI(x.detalhes)}</span>${flag}</div></article>`;
+    const early=x.inicioAntecipado?`<button type="button" class="early-start-adm-badge" title="Ver motivo do início antecipado" data-task-name="${escUI(x.tarefa)}" data-user="${escUI(x.usuario)}" data-date="${escUI(x.dataAntecipacao)}" data-schedule="${escUI(x.horario)}" data-early-reason="${escUI(x.motivoInicioAntecipado)}" data-early-minutes="${escUI(x.antecipacaoMin)}">🔵 Início antecipado</button>`:'';
+    return`<article class="mon-app-card"><div class="mon-app-time">${escUI(x.horario.replace(' às ','–'))}</div><div class="mon-app-main"><span class="task-icon-badge" aria-hidden="true">${escUI(x.icone||iconeTarefa(x.tarefa))}</span><div class="mon-app-copy"><strong>${escUI(x.tarefa)}</strong><span>${escUI(x.usuario)}</span></div></div><div class="mon-app-side"><span class="mon-app-status ${cls}">${escUI(label)}</span>${early}<span class="mon-app-points">${escUI(x.pontos)}</span></div><div class="mon-app-meta"><span>${escUI(x.dia)}</span><span class="real-time">${escUI(x.detalhes)}</span>${flag}</div></article>`;
   }).join('');
   if(cards.innerHTML!==novoHtml)cards.innerHTML=novoHtml;
 }
+window.addEventListener('rotina-early-start-updated',()=>renderCardsMonitor());
 
 function decorarGerenciar(){if(!MOBILE_QUERY.matches)return;document.querySelectorAll('.ger-task-card').forEach(card=>{if(card.querySelector('.task-icon-badge'))return;const nome=card.querySelector('.ger-main strong')?.textContent||'';const icon=document.createElement('span');icon.className='task-icon-badge';icon.setAttribute('aria-hidden','true');icon.textContent=iconeTarefa(nome);card.querySelector('.ger-main')?.before(icon);});}
 const navItens=[{id:'cadastro',ico:'👤',label:'Cadastro'},{id:'monitor',ico:'📋',label:'Monitor'},{id:'gerenciar',ico:'🗂️',label:'Gerenciar'},{id:'dashboard',ico:'📊',label:'Dashboard'},{id:'recompensas',ico:'🎁',label:'Prêmios'}];

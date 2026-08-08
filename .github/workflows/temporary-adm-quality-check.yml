@@ -64,6 +64,17 @@ jobs:
           assert(review.includes("resultado-mantido"),'adult may keep automatic result');
           assert(review.includes("devolucao-total"),'adult may fully return points');
 
+          // Decisão única / reversão
+          assert(review.includes('runTransaction'),'review write uses Firestore transaction');
+          assert(review.includes("function decisaoTomada(h)"),'review has explicit single-decision state');
+          assert(review.includes("if(decisaoTomada(atual))throw new Error('Já existe uma decisão"),'second decision is rejected inside transaction');
+          assert(review.includes('data-review="reverter"'),'reviewed occurrence replaces choices with revert button');
+          assert(review.includes("if(tipo==='reverter')"),'revert path exists');
+          assert(review.includes("revisaoStatus:'aguardando'"),'revert returns justification to pending review');
+          for(const campo of ['percentualRevisado:deleteField()','pontosDevolvidos:deleteField()','revisaoDecisao:deleteField()','revisadoEm:deleteField()']) assert(review.includes(campo),`revert clears ${campo.split(':')[0]}`);
+          assert(review.includes('pontosGanhos:o.pontos'),'revert restores automatic points');
+          assert(!review.includes('Math.max(o.pctAtual'),'old progressive review accumulation is removed');
+
           // Status: test real function, including 100% vs 0% regression
           const sm=mobile.match(/function statusCard\(txt=''\)\{[\s\S]*?\n\}/);assert(sm,'statusCard found');
           const box={fn:null};vm.createContext(box);vm.runInContext(sm[0]+';fn=statusCard;',box);
@@ -88,7 +99,7 @@ jobs:
           assert(mon.includes("import('./manage-pro.js')"),'monitor -> manage import chain intact');
           assert(mobile.includes("import('./adm-justification-review.js')"),'mobile/desktop UI -> review import intact');
 
-          // Return point calculations
+          // Return point calculations: one decision changes the absolute result, not a cumulative bonus
           const pts=(max,pct)=>Math.round(max*pct/100),ret=(orig,max,p)=>Math.max(orig,pts(max,p));
           assert(ret(0,20,50)===10,'0 -> 50% = 10/20');
           assert(ret(0,20,75)===15,'0 -> 75% = 15/20');
@@ -96,5 +107,7 @@ jobs:
           assert(ret(10,20,75)===15,'50% -> 75% = 15/20');
           assert(ret(10,20,100)===20,'50% -> 100% = 20/20');
           assert(ret(15,20,50)===15,'review never removes already-earned points');
+          const original=0,max=20,primeira=ret(original,max,50),revertida=original,nova=ret(revertida,max,100);
+          assert(primeira===10&&revertida===0&&nova===20,'50% -> revert -> 100% ends at 20, never 30');
           console.log('ALL ADM REGRESSION CHECKS PASSED');
           NODE

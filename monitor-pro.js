@@ -3,6 +3,15 @@ const estadoMonitor={usuarios:new Set(),tarefas:new Set(),status:new Set(),data:
 let monitorPreparado=false;
 let atualizarMonitorOriginal=null;
 
+if(!document.querySelector('link[data-manage-pro]')){
+  const link=document.createElement('link');
+  link.rel='stylesheet';
+  link.href='./manage-pro.css';
+  link.dataset.managePro='1';
+  document.head.appendChild(link);
+}
+import('./manage-pro.js').catch(e=>console.error('Gerenciamento responsivo:',e));
+
 const escM=(v='')=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const hojeISO=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};
 

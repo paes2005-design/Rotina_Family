@@ -3,6 +3,11 @@ const escUI=(v='')=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>'
 function iconeTarefa(nome=''){
   const n=String(nome).toLowerCase();
   const regras=[
+    [/videogame|video game|jogar game|jogar jogo|game/, '🎮'],
+    [/televis[aã]o|assistir tv|ver tv|tv/, '📺'],
+    [/brincar|brincadeira|brinquedo/, '🧸'],
+    [/celular|smartphone|telefone|mexer no celular|ficar no celular/, '📱'],
+    [/computador|notebook|pc/, '💻'],
     [/cama|dormir|quarto/, '🛏️'],
     [/dente|escovar|higiene bucal/, '🪥'],
     [/banho|chuveiro/, '🚿'],
@@ -17,8 +22,7 @@ function iconeTarefa(nome=''){
     [/rem[eé]dio|medica/, '💊'],
     [/exerc|treino|correr|caminhar|academia/, '🏃'],
     [/comer|almo|jantar|caf[eé]|lanche|aliment/, '🍴'],
-    [/oração|oracao|rezar/, '🙏'],
-    [/jogo|game|videogame/, '🎮']
+    [/oração|oracao|rezar/, '🙏']
   ];
   return regras.find(([r])=>r.test(n))?.[1]||'✅';
 }

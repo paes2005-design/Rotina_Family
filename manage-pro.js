@@ -22,9 +22,11 @@ function obterLinhaTarefas(){
       return m?.[1]||'';
     };
     const horario=row.children[0]?.textContent.trim()||'';
-    const tarefa=row.children[1]?.textContent.trim()||'';
+    const celTarefa=row.children[1];
+    const tarefa=celTarefa?.querySelector('strong')?.textContent.trim()||celTarefa?.textContent.trim()||'';
+    const icone=celTarefa?.querySelector('.task-icon-cell')?.textContent.trim()||'✅';
     const usuario=row.children[2]?.textContent.trim()||'';
-    return {row,horario,tarefa,usuario,id:pegarId(editar,'preencherEdicaoTarefa')||pegarId(excluir,'excluirTarefa')};
+    return {row,horario,tarefa,icone,usuario,id:pegarId(editar,'preencherEdicaoTarefa')||pegarId(excluir,'excluirTarefa')};
   });
 }
 
@@ -55,6 +57,7 @@ function renderCardsGerenciar(){
   cards.innerHTML=linhas.map(x=>`
     <article class="ger-task-card">
       <div class="ger-time">${escG(x.horario.replace(' às ','–'))}</div>
+      <span class="task-icon-badge" aria-hidden="true">${escG(x.icone||'✅')}</span>
       <div class="ger-main">
         <strong>${escG(x.tarefa)}</strong>
         <span>${escG(x.usuario)}</span>

@@ -162,6 +162,29 @@
             margin-bottom: 18px;
         }
 
+        .task-icon-name-field {
+            display: grid;
+            grid-template-columns: 150px minmax(0, 1fr);
+            gap: 10px;
+            align-items: center;
+        }
+        .task-icon-select {
+            font-size: 16px;
+            font-weight: 700;
+        }
+        .task-icon-cell {
+            display: inline-block;
+            min-width: 1.5em;
+            margin-right: 4px;
+            font-size: 1.15em;
+            line-height: 1;
+            vertical-align: -0.08em;
+        }
+        @media (max-width: 520px) {
+            .task-icon-name-field { grid-template-columns: 116px minmax(0, 1fr); }
+            .task-icon-select { padding-left: 8px; padding-right: 6px; }
+        }
+
         label {
             display: block;
             font-weight: 600;
@@ -428,8 +451,37 @@
                     </select>
                 </div>
                 <div class="form-group">
-                    <label for="nomeTarefa">Nome da Meta / Tarefa:</label>
-                    <input type="text" id="nomeTarefa">
+                    <label for="nomeTarefa">Ícone e Nome da Meta / Tarefa:</label>
+                    <div class="task-icon-name-field">
+                        <select id="iconeTarefa" class="task-icon-select" aria-label="Escolher ícone da tarefa">
+                            <option value="✅">✅ Geral</option>
+                            <option value="🎮">🎮 Videogame</option>
+                            <option value="📺">📺 TV</option>
+                            <option value="🧸">🧸 Brincar</option>
+                            <option value="📱">📱 Celular</option>
+                            <option value="💻">💻 Computador</option>
+                            <option value="🛏️">🛏️ Cama / Dormir</option>
+                            <option value="🪥">🪥 Dentes</option>
+                            <option value="🚿">🚿 Banho</option>
+                            <option value="📖">📖 Leitura</option>
+                            <option value="🎒">🎒 Mochila</option>
+                            <option value="📚">📚 Estudo</option>
+                            <option value="🧹">🧹 Limpeza</option>
+                            <option value="🍽️">🍽️ Louça</option>
+                            <option value="👕">👕 Roupas</option>
+                            <option value="🗑️">🗑️ Lixo</option>
+                            <option value="🐾">🐾 Pet</option>
+                            <option value="💊">💊 Remédio</option>
+                            <option value="🏃">🏃 Exercício</option>
+                            <option value="🍴">🍴 Alimentação</option>
+                            <option value="🙏">🙏 Oração</option>
+                            <option value="🎵">🎵 Música</option>
+                            <option value="🚗">🚗 Transporte</option>
+                            <option value="🛒">🛒 Compras</option>
+                        </select>
+                        <input type="text" id="nomeTarefa" placeholder="Digite o nome que quiser">
+                    </div>
+                    <small style="color:#777">O nome é livre. O ícone é escolhido separadamente e não depende do texto.</small>
                 </div>
                 <div class="form-group" id="blocoDiasSemana">
                     <label>Dias da Semana (a tarefa se repete nesses dias):</label>
@@ -987,12 +1039,26 @@
         });
     }
 
+    const ICONES_TAREFA_PERMITIDOS = new Set(['✅','🎮','📺','🧸','📱','💻','🛏️','🪥','🚿','📖','🎒','📚','🧹','🍽️','👕','🗑️','🐾','💊','🏃','🍴','🙏','🎵','🚗','🛒']);
+    function iconeTarefaLegado(nome='') {
+        const n=String(nome).toLowerCase();
+        const regras=[
+            [/videogame|video game|jogar game|jogar jogo|game/,'🎮'],[/televis[aã]o|assistir tv|ver tv|tv/,'📺'],[/brincar|brincadeira|brinquedo/,'🧸'],[/celular|smartphone|telefone/,'📱'],[/computador|notebook|pc/,'💻'],[/cama|dormir|quarto/,'🛏️'],[/dente|escovar|higiene bucal/,'🪥'],[/banho|chuveiro/,'🚿'],[/leitura|ler|livro/,'📖'],[/mochila|material escolar/,'🎒'],[/estud|dever|lição|licao|prova|escola/,'📚'],[/limp|varrer|arrumar|organizar|faxina/,'🧹'],[/louça|louca|prato|cozinha/,'🍽️'],[/roupa|uniforme|lavar roupa/,'👕'],[/lixo/,'🗑️'],[/pet|cachorro|gato|ração|racao/,'🐾'],[/rem[eé]dio|medica/,'💊'],[/exerc|treino|correr|caminhar|academia/,'🏃'],[/comer|almo|jantar|caf[eé]|lanche|aliment/,'🍴'],[/oração|oracao|rezar/,'🙏']
+        ];
+        return regras.find(([r])=>r.test(n))?.[1]||'✅';
+    }
+    function normalizarIconeTarefa(icone,nome='') {
+        const valor=String(icone||'').trim();
+        return ICONES_TAREFA_PERMITIDOS.has(valor) ? valor : iconeTarefaLegado(nome);
+    }
+
     window.salvarTarefa = async () => {
         const editId = document.getElementById('editTarefaId').value;
         const perfilIdSelecionado = document.getElementById('tarefaResponsavel').value;
         const perfilSelecionado = perfisCache.find(p => p.id === perfilIdSelecionado);
         const responsavel = perfilSelecionado?.nome || '';
         const nomeTarefa = document.getElementById('nomeTarefa').value.trim();
+        const iconeTarefaSelecionado = normalizarIconeTarefa(document.getElementById('iconeTarefa').value, nomeTarefa);
         const horaInicio = document.getElementById('horarioInicioSugerido').value;
         const horaFim = document.getElementById('horarioFimSugerido').value;
         const tolerancia = parseInt(document.getElementById('toleranciaTarefa').value) || 0;
@@ -1057,6 +1123,7 @@
                         const tRef = doc(db, "tarefas", tarefasDoDia[0].id);
                         batch.update(tRef, {
                             nome: nomeTarefa,
+                            icone: iconeTarefaSelecionado,
                             perfilNome: responsavel,
                             perfilId: perfilIdSelecionado,
                             tarefaGrupoId: grupoDestino,
@@ -1076,6 +1143,7 @@
                         batch.set(novaRef, {
                             grupoId: gId,
                             nome: nomeTarefa,
+                            icone: iconeTarefaSelecionado,
                             perfilNome: responsavel,
                             perfilId: perfilIdSelecionado,
                             tarefaGrupoId: grupoDestino,
@@ -1126,6 +1194,7 @@
                 batch.set(novaRef, {
                     grupoId: gId,
                     nome: nomeTarefa,
+                    icone: iconeTarefaSelecionado,
                     perfilNome: responsavel,
                     perfilId: perfilIdSelecionado,
                     tarefaGrupoId,
@@ -1146,6 +1215,7 @@
 
             alert('Meta cadastrada com sucesso!');
             document.getElementById('nomeTarefa').value = '';
+            document.getElementById('iconeTarefa').value = '✅';
             document.querySelectorAll('.dia-semana-check').forEach(cb => cb.checked = false);
         }
     };
@@ -1157,6 +1227,7 @@
         document.getElementById('editTarefaId').value = t.id;
         document.getElementById('tarefaResponsavel').value = t.perfilId || (perfisCache.find(p=>p.nome===t.perfilNome)?.id || '');
         document.getElementById('nomeTarefa').value = t.nome;
+        document.getElementById('iconeTarefa').value = normalizarIconeTarefa(t.icone, t.nome);
         document.getElementById('horarioInicioSugerido').value = t.horaSugeridaInicio;
         document.getElementById('horarioFimSugerido').value = t.horaSugeridaFim;
         document.getElementById('toleranciaTarefa').value = t.tempoLimite || 0;
@@ -1182,6 +1253,7 @@
     window.cancelarEdicaoTarefa = () => {
         document.getElementById('editTarefaId').value = '';
         document.getElementById('nomeTarefa').value = '';
+        document.getElementById('iconeTarefa').value = '✅';
         document.getElementById('horarioInicioSugerido').value = '08:00';
         document.getElementById('horarioFimSugerido').value = '08:30';
         document.getElementById('toleranciaTarefa').value = '10';
@@ -1239,7 +1311,7 @@
             tbody.innerHTML += `
                 <tr>
                     <td>${t.horaSugeridaInicio} às ${t.horaSugeridaFim}</td>
-                    <td><strong>${escaparHtml(t.nome)}</strong></td>
+                    <td><span class="task-icon-cell" aria-hidden="true">${escaparHtml(normalizarIconeTarefa(t.icone,t.nome))}</span><strong>${escaparHtml(t.nome)}</strong></td>
                     <td>${escaparHtml(t.perfilNome)}</td>
                     <td>
                         <div style="display: flex; gap: 5px;">
@@ -1443,7 +1515,7 @@
             tbody.innerHTML += `
                 <tr>
                     <td>${horariosHtml}</td>
-                    <td><strong>${escaparHtml(t.nome)}</strong></td>
+                    <td><span class="task-icon-cell" aria-hidden="true">${escaparHtml(normalizarIconeTarefa(t.icone,t.nome))}</span><strong>${escaparHtml(t.nome)}</strong></td>
                     <td>${escaparHtml(t.perfilNome)}</td>
                     <td>${escaparHtml(t.diaSemana)}</td>
                     <td><span class="badge ${badgeClass}">${escaparHtml(statusTexto)}</span></td>

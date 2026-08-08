@@ -1,4 +1,7 @@
-const escUI=(v='')=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
+const escUI=(v='')=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// Revisão de justificativas/pontos: módulo isolado, sem timer contínuo nem observer próprio.
+import('./adm-justification-review.js').catch(e=>console.error('Revisão de justificativa:',e));
 
 // Interface móvel: no desktop não monta cartões, navegação ou observers.
 const MOBILE_QUERY=window.matchMedia('(max-width: 780px)');
@@ -13,10 +16,65 @@ function iconeTarefa(nome=''){
   return regras.find(([r])=>r.test(n))?.[1]||'✅';
 }
 window.iconeTarefaRotina=iconeTarefa;
-function statusCard(txt=''){const t=txt.toLowerCase();if(t.includes('atrasado'))return['late','Atrasado'];if(t.includes('75%')||t.includes('50%')||t.includes('parcial'))return['partial',txt.trim()||'Parcial'];if(t.includes('prazo'))return['ok',txt.trim()||'No prazo'];if(t.includes('andamento'))return['progress','Em andamento'];return['pending',txt.trim()||'Pendente'];}
-function dadosMonitor(){return[...document.querySelectorAll('#tbodyMonitor tr')].filter(r=>r.children.length>=6&&!r.classList.contains('monitor-hidden')).map(r=>{const c=r.children;const tarefa=c[1]?.querySelector('strong')?.textContent.trim()||c[1]?.textContent.trim()||'Tarefa';const horario=c[0]?.querySelector('strong')?.textContent.trim()||c[0]?.textContent.trim().split('|')[0]||'';const detalhes=[...c[0]?.querySelectorAll('div')||[]].map(x=>x.textContent.trim()).join(' ');return{horario,tarefa,usuario:c[2]?.textContent.trim()||'',dia:c[3]?.textContent.trim()||'',status:c[4]?.textContent.trim()||'Pendente',pontos:c[5]?.textContent.trim()||'',detalhes};});}
-function garantirCardsMonitor(){const monitor=document.getElementById('monitor');if(!monitor)return null;let cards=document.getElementById('monitorNativeCards');if(cards)return cards;cards=document.createElement('div');cards.id='monitorNativeCards';cards.className='monitor-native-cards';const tabela=document.querySelector('#monitor .monitor-scroll-pro')||document.querySelector('#monitor .tabela-scroll');tabela?.insertAdjacentElement('afterend',cards);return cards;}
-function renderCardsMonitor(){if(!MOBILE_QUERY.matches)return;const cards=garantirCardsMonitor();if(!cards)return;const dados=dadosMonitor();const novoHtml=!dados.length?'<div class="monitor-native-empty">Nenhuma tarefa para os filtros selecionados.</div>':dados.map(x=>{const[cls,label]=statusCard(x.status);return`<article class="mon-app-card"><div class="mon-app-time">${escUI(x.horario.replace(' às ','–'))}</div><div class="mon-app-main"><span class="task-icon-badge" aria-hidden="true">${iconeTarefa(x.tarefa)}</span><div class="mon-app-copy"><strong>${escUI(x.tarefa)}</strong><span>${escUI(x.usuario)}</span></div></div><div class="mon-app-side"><span class="mon-app-status ${cls}">${escUI(label)}</span><span class="mon-app-points">${escUI(x.pontos)}</span></div><div class="mon-app-meta"><span>${escUI(x.dia)}</span><span class="real-time">${escUI(x.detalhes)}</span></div></article>`}).join('');if(cards.innerHTML!==novoHtml)cards.innerHTML=novoHtml;}
+
+function statusCard(txt=''){
+  const t=String(txt).toLowerCase();
+  if(t.includes('75%'))return['partial','75% · atraso leve'];
+  if(t.includes('50%'))return['partial','50% · atraso maior'];
+  if(t.includes('atrasado')||t.includes('0%'))return['late','0% · Atrasado'];
+  if(t.includes('100%'))return['ok','100% · No prazo'];
+  if(t.includes('prazo'))return['ok','No prazo'];
+  if(t.includes('andamento'))return['progress','Em andamento'];
+  return['pending',txt.trim()||'Pendente'];
+}
+
+function dadosMonitor(){
+  return [...document.querySelectorAll('#tbodyMonitor tr')]
+    .filter(r=>r.children.length>=6&&!r.classList.contains('monitor-hidden'))
+    .map(r=>{
+      const c=r.children;
+      const tarefa=c[1]?.querySelector('strong')?.textContent.trim()||c[1]?.textContent.trim()||'Tarefa';
+      const horario=c[0]?.querySelector('strong')?.textContent.trim()||c[0]?.textContent.trim().split('|')[0]||'';
+      const detalheOriginal=c[0]?.querySelector('div');
+      const justificativa=detalheOriginal?.querySelector('.tooltip-justificativa .tooltip-texto')?.textContent.trim()||'';
+      let detalhes='';
+      if(detalheOriginal){
+        const clone=detalheOriginal.cloneNode(true);
+        clone.querySelectorAll('.tooltip-justificativa,[title*="Justificativa"]').forEach(x=>x.remove());
+        detalhes=(clone.textContent||'').replace(/\s+/g,' ').trim();
+      }
+      return{
+        horario,tarefa,
+        usuario:c[2]?.textContent.trim()||'',
+        dia:c[3]?.textContent.trim()||'',
+        status:c[4]?.textContent.trim()||'Pendente',
+        pontos:c[5]?.textContent.trim()||'',
+        detalhes,justificativa
+      };
+    });
+}
+
+function garantirCardsMonitor(){
+  const monitor=document.getElementById('monitor');if(!monitor)return null;
+  let cards=document.getElementById('monitorNativeCards');if(cards)return cards;
+  cards=document.createElement('div');cards.id='monitorNativeCards';cards.className='monitor-native-cards';
+  const tabela=document.querySelector('#monitor .monitor-scroll-pro')||document.querySelector('#monitor .tabela-scroll');
+  tabela?.insertAdjacentElement('afterend',cards);
+  return cards;
+}
+
+function renderCardsMonitor(){
+  if(!MOBILE_QUERY.matches)return;
+  const cards=garantirCardsMonitor();if(!cards)return;
+  const dados=dadosMonitor();
+  const novoHtml=!dados.length?'<div class="monitor-native-empty">Nenhuma tarefa para os filtros selecionados.</div>':dados.map(x=>{
+    const[cls,label]=statusCard(x.status);
+    const flag=x.justificativa?`<button type="button" class="mon-just-flag" aria-label="Abrir justificativa de ${escUI(x.tarefa)}" title="Ver justificativa" data-task-name="${escUI(x.tarefa)}" data-user="${escUI(x.usuario)}" data-day="${escUI(x.dia)}" data-schedule="${escUI(x.horario)}" data-justification="${escUI(x.justificativa)}">🚩</button>`:'';
+    return`<article class="mon-app-card"><div class="mon-app-time">${escUI(x.horario.replace(' às ','–'))}</div><div class="mon-app-main"><span class="task-icon-badge" aria-hidden="true">${iconeTarefa(x.tarefa)}</span><div class="mon-app-copy"><strong>${escUI(x.tarefa)}</strong><span>${escUI(x.usuario)}</span></div></div><div class="mon-app-side"><span class="mon-app-status ${cls}">${escUI(label)}</span><span class="mon-app-points">${escUI(x.pontos)}</span></div><div class="mon-app-meta"><span>${escUI(x.dia)}</span><span class="real-time">${escUI(x.detalhes)}</span>${flag}</div></article>`;
+  }).join('');
+  if(cards.innerHTML!==novoHtml)cards.innerHTML=novoHtml;
+}
+
 function decorarGerenciar(){if(!MOBILE_QUERY.matches)return;document.querySelectorAll('.ger-task-card').forEach(card=>{if(card.querySelector('.task-icon-badge'))return;const nome=card.querySelector('.ger-main strong')?.textContent||'';const icon=document.createElement('span');icon.className='task-icon-badge';icon.setAttribute('aria-hidden','true');icon.textContent=iconeTarefa(nome);card.querySelector('.ger-main')?.before(icon);});}
 const navItens=[{id:'cadastro',ico:'👤',label:'Cadastro'},{id:'monitor',ico:'📋',label:'Monitor'},{id:'gerenciar',ico:'🗂️',label:'Gerenciar'},{id:'dashboard',ico:'📊',label:'Dashboard'},{id:'recompensas',ico:'🎁',label:'Prêmios'}];
 function clicarAba(nome){const btn=[...document.querySelectorAll('.tab-nav .tab-btn')].find(b=>(b.textContent||'').trim().toLowerCase()===nome.toLowerCase());btn?.click();}

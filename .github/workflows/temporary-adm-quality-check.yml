@@ -64,10 +64,15 @@ jobs:
           assert(review.includes("resultado-mantido"),'adult may keep automatic result');
           assert(review.includes("devolucao-total"),'adult may fully return points');
 
-          // Decisão única / reversão
-          assert(review.includes('runTransaction'),'review write uses Firestore transaction');
+          // Decisão única / reversão / offline
+          assert(!review.includes('runTransaction'),'review no longer depends on online-only transaction');
+          assert(review.includes('writeBatch'),'review uses Firestore write batch persisted offline');
+          assert(review.includes('commitSemBloquearOffline'),'offline review does not block UI waiting for server acknowledgement');
+          assert(review.includes('navigator.onLine===false'),'offline review gives explicit queued-sync feedback');
+          assert(review.includes('ultimaOperacao'),'older async acknowledgements cannot overwrite newer local feedback');
+          assert(html.includes('persistentLocalCache')&&html.includes('persistentMultipleTabManager'),'ADM Firestore persistent cache remains enabled');
           assert(review.includes("function decisaoTomada(h)"),'review has explicit single-decision state');
-          assert(review.includes("if(decisaoTomada(atual))throw new Error('Já existe uma decisão"),'second decision is rejected inside transaction');
+          assert(review.includes("if(decisaoTomada(atual))throw new Error('Já existe uma decisão"),'second decision is rejected by current local decision state');
           assert(review.includes('data-review="reverter"'),'reviewed occurrence replaces choices with revert button');
           assert(review.includes("if(tipo==='reverter')"),'revert path exists');
           assert(review.includes("revisaoStatus:'aguardando'"),'revert returns justification to pending review');

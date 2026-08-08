@@ -1,0 +1,58 @@
+name: Apply ADM audit fixes
+on:
+  push:
+    paths:
+      - '.github/workflows/apply-audit-fixes.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply exact audited fixes
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('index-ADMIN-v8.html')
+          s=p.read_text(encoding='utf-8')
+
+          s=s.replace('<label>Pequeno atraso no início (%)</label>','<label>Tolerância excedida até +25% (%)</label>',1)
+          s=s.replace('<label>Atraso maior no início (%)</label>','<label>Tolerância excedida até +50% (%)</label>',1)
+
+          pattern=r'''    function textoRegraAtraso\(r=regraAtrasoAtual\)\{.*?    \}\n    function atualizarExplicacaoRegraAtrasoAdmin'''
+          repl='''    function textoRegraAtraso(r=regraAtrasoAtual){
+        return `<strong>Regra atual: ${r.dentroLimites}% / ${r.atrasoLeve}% / ${r.atrasoMaior}% / ${r.estourado}%.</strong><br>`+
+        `• O saldo consumido é a soma do atraso no início com o atraso no término.<br>`+
+        `• Consumo até 100% da tolerância: <strong>${r.dentroLimites}%</strong> dos pontos.<br>`+
+        `• Consumo acima da tolerância, até +25%: <strong>${r.atrasoLeve}%</strong>.<br>`+
+        `• Consumo acima de +25%, até +50%: <strong>${r.atrasoMaior}%</strong>.<br>`+
+        `• Consumo acima de +50% da tolerância: <strong>${r.estourado}%</strong>.<br><small>Exemplo com tolerância de 10 min: até 10 min consumidos = primeira faixa; 11 a 13 = segunda; 14 a 15 = terceira; acima de 15 = 0%. O cálculo usa minutos completos.</small>`;
+    }
+    function atualizarExplicacaoRegraAtrasoAdmin'''
+          s2,n=re.subn(pattern,repl,s,flags=re.S)
+          if n!=1:
+              raise SystemExit(f'Expected exactly 1 admin scoring explanation function, found {n}')
+          s=s2
+
+          old='            if(!h.status || !h.status.includes("Prazo")) return;\n            const pts = h.pontosGanhos || 0;'
+          new='            const pts = Number(h.pontosGanhos) || 0;'
+          if s.count(old)!=1:
+              raise SystemExit(f'Expected exactly 1 legacy admin points filter, found {s.count(old)}')
+          s=s.replace(old,new,1)
+
+          p.write_text(s,encoding='utf-8')
+          PY
+      - name: Verify replacements
+        run: |
+          grep -F 'O saldo consumido é a soma do atraso no início com o atraso no término.' index-ADMIN-v8.html
+          grep -F 'Tolerância excedida até +25%' index-ADMIN-v8.html
+          ! grep -F 'if(!h.status || !h.status.includes("Prazo")) return;' index-ADMIN-v8.html
+      - name: Commit fixes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index-ADMIN-v8.html
+          git commit -m "Align ADM scoring explanation and reviewed totals"
+          git push

@@ -63,7 +63,7 @@ function svgLinha(pontos){
 }
 function sequencia(hist){const datas=new Set(hist.filter(h=>h.status?.includes('Prazo')).map(h=>h.data));let d=new Date(),n=0;for(let i=0;i<60;i++){const k=iso(d);if(datas.has(k))n++;else if(i>0)break;d.setDate(d.getDate()-1)}return n;}
 
-async function carregarDados(grupoId){
+async function carregarDados(grupoId, db){
   const [ps,hs]=await Promise.all([getDocs(query(collection(db,'perfis'),where('grupoId','==',grupoId))),getDocs(query(collection(db,'historico'),where('grupoId','==',grupoId)))]);
   return {perfis:ps.docs.map(d=>({id:d.id,...d.data()})),historico:hs.docs.map(d=>({id:d.id,...d.data()}))};
 }
@@ -73,7 +73,7 @@ window.renderizarDashboard=async function(){
   const grupoId=(document.getElementById('displayCodigoCliente')?.innerText||'').trim(); if(!grupoId||grupoId==='--'||grupoId==='CLI-Gen') return;
   const root=document.getElementById('dashboardFamilia'); root.innerHTML='<div class="dashboard-kpi"><small>Atualizando</small><strong>...</strong><em>Carregando dados</em></div>';
   try{
-    const {perfis,historico}=await carregarDados(grupoId),sel=document.getElementById('dashboardPerfil'),atual=sel.value;
+    const {perfis,historico}=await carregarDados(grupoId,db),sel=document.getElementById('dashboardPerfil'),atual=sel.value;
     sel.innerHTML='<option value="">Todos</option>'+perfis.map(p=>`<option value="${esc(p.id)}">${esc(p.nome)}</option>`).join(''); if([...sel.options].some(o=>o.value===atual))sel.value=atual;
     const ref=new Date((document.getElementById('dashboardDataRef').value||iso(new Date()))+'T12:00:00'),dia=iso(ref),iniS=iso(inicioSemana(ref)),fimSD=new Date(inicioSemana(ref));fimSD.setDate(fimSD.getDate()+6);const fimS=iso(fimSD),iniM=`${ref.getFullYear()}-${String(ref.getMonth()+1).padStart(2,'0')}-01`,fimM=iso(new Date(ref.getFullYear(),ref.getMonth()+1,0));
     const campo=periodoAtual;

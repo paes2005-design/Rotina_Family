@@ -1,5 +1,6 @@
 from pathlib import Path
 
+# Trigger da validação isolada desta correção offline.
 p=Path('adm-justification-review.js')
 s=p.read_text(encoding='utf-8')
 old="import {getFirestore,collection,query,where,getDocs,doc,getDoc,runTransaction,deleteField} from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';"

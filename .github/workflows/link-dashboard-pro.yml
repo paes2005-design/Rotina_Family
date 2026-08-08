@@ -1,0 +1,34 @@
+name: Link dashboard pro assets
+on:
+  push:
+    paths:
+      - .github/workflows/link-dashboard-pro.yml
+permissions:
+  contents: write
+jobs:
+  link:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Link assets
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('index-ADMIN-v8.html')
+          s=p.read_text()
+          css='<link rel="stylesheet" href="./dashboard-ranking-pro.css">'
+          js='<script type="module" src="./dashboard-ranking-pro.js"></script>'
+          if css not in s:
+              s=s.replace('</head>',f'    {css}\n</head>',1)
+          if js not in s:
+              s=s.replace('</body>',f'  {js}\n</body>',1)
+          p.write_text(s)
+          PY
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index-ADMIN-v8.html
+          git commit -m "Enable professional ranking dashboard"
+          git pull --rebase origin main
+          git push

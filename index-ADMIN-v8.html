@@ -608,7 +608,7 @@
     <div class="form-group"><label>Dentro dos limites (%)</label><input id="regraPct100" type="number" min="0" max="100" value="100"></div>
     <div class="form-group"><label>Pequeno atraso no início (%)</label><input id="regraPct75" type="number" min="0" max="100" value="75"></div>
     <div class="form-group"><label>Atraso maior no início (%)</label><input id="regraPct50" type="number" min="0" max="100" value="50"></div>
-    <div class="form-group"><label>Estourou o limite final (%)</label><input id="regraPct0" type="number" min="0" max="100" value="0"></div>
+    <div class="form-group"><label>Estourou o limite final</label><div style="padding:10px;border:1px solid #ddd;border-radius:6px;background:#f8fafc"><strong>0% fixo</strong> — iniciar ou terminar depois do limite final sempre zera a pontuação.</div><input id="regraPct0" type="hidden" value="0"></div>
     <div id="previewRegraAtrasoAdmin" style="padding:10px;background:#f8fafc;border-radius:8px;font-size:13px;margin:10px 0"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
       <button class="btn-action" style="width:auto;background:#64748b" onclick="fecharConfiguracaoRegraAtraso()">Cancelar</button>
@@ -645,7 +645,7 @@
             dentroLimites:n(r.dentroLimites,100),
             atrasoLeve:n(r.atrasoLeve,75),
             atrasoMaior:n(r.atrasoMaior,50),
-            estourado:n(r.estourado,0)
+            estourado:0
         };
     }
     function textoRegraAtraso(r=regraAtrasoAtual){
@@ -661,7 +661,7 @@
             dentroLimites:Number(document.getElementById('regraPct100')?.value ?? regraAtrasoAtual.dentroLimites),
             atrasoLeve:Number(document.getElementById('regraPct75')?.value ?? regraAtrasoAtual.atrasoLeve),
             atrasoMaior:Number(document.getElementById('regraPct50')?.value ?? regraAtrasoAtual.atrasoMaior),
-            estourado:Number(document.getElementById('regraPct0')?.value ?? regraAtrasoAtual.estourado)
+            estourado:0
         });
     }
     async function carregarRegraAtraso(){
@@ -677,14 +677,14 @@
     };
     window.fecharConfiguracaoRegraAtraso=()=>{ document.getElementById('modalRegraAtrasoAdmin').style.display='none'; };
     window.salvarConfiguracaoRegraAtraso=async()=>{
-        const nova={dentroLimites:Number(document.getElementById('regraPct100').value),atrasoLeve:Number(document.getElementById('regraPct75').value),atrasoMaior:Number(document.getElementById('regraPct50').value),estourado:Number(document.getElementById('regraPct0').value)};
+        const nova={dentroLimites:Number(document.getElementById('regraPct100').value),atrasoLeve:Number(document.getElementById('regraPct75').value),atrasoMaior:Number(document.getElementById('regraPct50').value),estourado:0};
         if(Object.values(nova).some(v=>!Number.isFinite(v)||v<0||v>100)) return alert('Use percentuais entre 0 e 100.');
         if(!(nova.dentroLimites>=nova.atrasoLeve && nova.atrasoLeve>=nova.atrasoMaior && nova.atrasoMaior>=nova.estourado)) return alert('Os percentuais precisam ficar em ordem decrescente: primeira faixa ≥ segunda ≥ terceira ≥ estourado.');
         const gId=adminLogadoAtual?.codigoCliente || adminLogadoAtual?.grupoId; if(!gId)return;
         await setDoc(doc(db,'configGrupos',gId),{grupoId:gId,regraAtraso:nova,regraAtrasoAtualizadaEm:new Date().toISOString()},{merge:true});
         regraAtrasoAtual=nova; atualizarExplicacaoRegraAtrasoAdmin(); fecharConfiguracaoRegraAtraso(); alert('Regra de atraso atualizada. O aplicativo Cliente receberá a nova regra automaticamente.');
     };
-    document.addEventListener('input',e=>{ if(['regraPct100','regraPct75','regraPct50','regraPct0'].includes(e.target?.id)) atualizarExplicacaoRegraAtrasoAdmin(); });
+    document.addEventListener('input',e=>{ if(['regraPct100','regraPct75','regraPct50'].includes(e.target?.id)) atualizarExplicacaoRegraAtrasoAdmin(); });
 
     async function hashPin(pin) {
         const data = new TextEncoder().encode(pin);

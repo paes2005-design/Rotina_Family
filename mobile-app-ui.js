@@ -1,6 +1,7 @@
 const escUI=(v='')=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
-import('./adm-enhancements.js').catch(e=>console.error('Aprimoramentos ADM:',e));
+// HOTFIX ESTABILIDADE: adm-enhancements.js temporariamente desativado.
+// O módulo criava um ciclo de MutationObserver nos cartões do Monitor/Gerenciar.
 
 function iconeTarefa(nome=''){
   const n=String(nome).toLowerCase();
@@ -62,8 +63,8 @@ function garantirCardsMonitor(){
 function renderCardsMonitor(){
   const cards=garantirCardsMonitor(); if(!cards)return;
   const dados=dadosMonitor();
-  if(!dados.length){cards.innerHTML='<div class="monitor-native-empty">Nenhuma tarefa para os filtros selecionados.</div>';return;}
-  cards.innerHTML=dados.map(x=>{const [cls,label]=statusCard(x.status);return `<article class="mon-app-card"><div class="mon-app-time">${escUI(x.horario.replace(' às ','–'))}</div><div class="mon-app-main"><span class="task-icon-badge" aria-hidden="true">${iconeTarefa(x.tarefa)}</span><div class="mon-app-copy"><strong>${escUI(x.tarefa)}</strong><span>${escUI(x.usuario)}</span></div></div><div class="mon-app-side"><span class="mon-app-status ${cls}">${escUI(label)}</span><span class="mon-app-points">${escUI(x.pontos)}</span></div><div class="mon-app-meta"><span>${escUI(x.dia)}</span><span class="real-time">${escUI(x.detalhes)}</span></div></article>`}).join('');
+  const novoHtml=!dados.length?'<div class="monitor-native-empty">Nenhuma tarefa para os filtros selecionados.</div>':dados.map(x=>{const [cls,label]=statusCard(x.status);return `<article class="mon-app-card"><div class="mon-app-time">${escUI(x.horario.replace(' às ','–'))}</div><div class="mon-app-main"><span class="task-icon-badge" aria-hidden="true">${iconeTarefa(x.tarefa)}</span><div class="mon-app-copy"><strong>${escUI(x.tarefa)}</strong><span>${escUI(x.usuario)}</span></div></div><div class="mon-app-side"><span class="mon-app-status ${cls}">${escUI(label)}</span><span class="mon-app-points">${escUI(x.pontos)}</span></div><div class="mon-app-meta"><span>${escUI(x.dia)}</span><span class="real-time">${escUI(x.detalhes)}</span></div></article>`}).join('');
+  if(cards.innerHTML!==novoHtml) cards.innerHTML=novoHtml;
 }
 
 function decorarGerenciar(){
@@ -112,6 +113,5 @@ function iniciarUI(){
   montarBottomNav();renderCardsMonitor();decorarGerenciar();
   const tb=document.getElementById('tbodyMonitor');if(tb)new MutationObserver(()=>renderCardsMonitor()).observe(tb,{childList:true,subtree:true,attributes:true,attributeFilter:['class']});
   const cad=document.getElementById('cadastro');if(cad)new MutationObserver(()=>decorarGerenciar()).observe(cad,{childList:true,subtree:true});
-  window.addEventListener('resize',()=>{renderCardsMonitor();decorarGerenciar();});
 }
-if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',iniciarUI);else iniciarUI();
+if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',iniciarUI,{once:true});else iniciarUI();

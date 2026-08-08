@@ -1,0 +1,28 @@
+name: Apply manual icon test patch
+on:
+  push:
+    branches:
+      - test/manual-icons
+    paths:
+      - tools/apply_manual_icons_test.py
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: test/manual-icons
+      - name: Apply exact manual icon patch
+        run: python tools/apply_manual_icons_test.py
+      - name: Verify and commit
+        run: |
+          node --check mobile-app-ui.js
+          node --check manage-pro.js
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index-ADMIN-v8.html mobile-app-ui.js manage-pro.js
+          git diff --cached --quiet && exit 0
+          git commit -m "Test manual task icon selection"
+          git push origin test/manual-icons

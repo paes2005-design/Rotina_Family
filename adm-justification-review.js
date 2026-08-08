@@ -1,5 +1,5 @@
 import {getApps,getApp} from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
-import {getFirestore,collection,query,where,getDocs,doc,getDoc,runTransaction,deleteField} from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+import {getFirestore,collection,query,where,getDocs,doc,getDoc,writeBatch,deleteField} from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
 
 const esc=(v='')=>String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot',"'":'&#39;'}[c]));
 const pad=n=>String(n).padStart(2,'0');
@@ -107,77 +107,92 @@ async function abrir(ctx={}){
   }catch(e){console.error('Revisão de justificativa:',e);msg.textContent=e.message||'Não foi possível carregar a justificativa.';}
 }
 
+function commitSemBloquearOffline(batch,operacaoId,msg){
+  // O SDK completo do Firestore persiste writeBatch offline. O Promise só resolve
+  // quando o servidor confirmar, por isso não bloqueamos a interface esperando-o.
+  batch.commit().then(()=>{
+    if(operacaoId!==ultimaOperacao)return;
+    if(msg&&navigator.onLine!==false)msg.textContent=(msg.dataset.okOnline||msg.textContent);
+  }).catch(e=>{
+    console.error('Sincronizar revisão:',e);
+    if(operacaoId!==ultimaOperacao)return;
+    if(msg)msg.textContent='⚠️ A alteração ficou local, mas o servidor recusou a sincronização. Reconecte e tente novamente.';
+  });
+}
+
+let ultimaOperacao=0;
 async function salvarRevisao(tipo,pct){
   if(salvando||!contextoAtual?.tarefa||!contextoAtual?.historico)return;
   salvando=true;
-  const m=garantirModal(),msg=m.querySelector('#admReviewMsg'),buttons=[...m.querySelectorAll('#admReviewAcoes button')];buttons.forEach(b=>b.disabled=true);
-  msg.textContent=tipo==='reverter'?'Revertendo decisão…':'Salvando revisão…';
+  const operacaoId=++ultimaOperacao;
+  const m=garantirModal(),msg=m.querySelector('#admReviewMsg'),buttons=[...m.querySelectorAll('#admReviewAcoes button')];
+  buttons.forEach(b=>b.disabled=true);
+  msg.textContent=tipo==='reverter'?'Registrando reversão…':'Registrando parecer…';
   try{
     const banco=db();if(!banco)throw new Error('Firebase ainda não está disponível.');
     const {tarefa:t,data,histDocs,execDocs}=contextoAtual;
     if(!histDocs.length)throw new Error('Histórico da ocorrência não encontrado.');
-    let resultado=null;
 
-    await runTransaction(banco,async tx=>{
-      // O primeiro histórico é a trava canônica da ocorrência. A transação impede
-      // duas decisões concorrentes em duas telas ou em dois toques rápidos.
-      const principal=await tx.get(histDocs[0].ref);
-      if(!principal.exists())throw new Error('A ocorrência não existe mais.');
-      const atual={id:principal.id,...principal.data()};
-      const o=originalDaOcorrencia(atual);
+    // O estado local/cache é a referência imediata. Isso mantém a decisão única na
+    // interface e permite reverter + escolher novamente sem depender de internet.
+    const atual={...contextoAtual.historico};
+    const o=originalDaOcorrencia(atual);
+    const batch=writeBatch(banco);
+    let atualizado;
 
-      if(tipo==='reverter'){
-        if(!decisaoTomada(atual))throw new Error('Esta ocorrência não possui uma decisão para reverter.');
-        const patch={
-          pontosGanhos:o.pontos,
-          pontosOriginais:o.pontos,
-          percentualOriginal:o.pct,
-          revisaoStatus:'aguardando',
-          percentualRevisado:deleteField(),
-          pontosDevolvidos:deleteField(),
-          revisaoDecisao:deleteField(),
-          revisadoEm:deleteField()
-        };
-        histDocs.forEach(d=>tx.update(d.ref,patch));
-        execDocs.forEach(d=>tx.update(d.ref,patch));
-        if(data===hojeISO())tx.update(doc(banco,'tarefas',t.id),patch);
-        resultado={tipo:'reverter',o,patch};
-        return;
-      }
+    if(tipo==='reverter'){
+      if(!decisaoTomada(atual))throw new Error('Esta ocorrência não possui uma decisão para reverter.');
+      const patch={
+        pontosGanhos:o.pontos,
+        pontosOriginais:o.pontos,
+        percentualOriginal:o.pct,
+        revisaoStatus:'aguardando',
+        percentualRevisado:deleteField(),
+        pontosDevolvidos:deleteField(),
+        revisaoDecisao:deleteField(),
+        revisadoEm:deleteField()
+      };
+      histDocs.forEach(d=>batch.update(d.ref,patch));
+      execDocs.forEach(d=>batch.update(d.ref,patch));
+      if(data===hojeISO())batch.update(doc(banco,'tarefas',t.id),patch);
 
-      if(decisaoTomada(atual))throw new Error('Já existe uma decisão para esta ocorrência. Reverta a decisão atual antes de escolher outra.');
-      const alvoPct=tipo==='manter'?o.pct:Math.max(o.pct,Number(pct)||0);
-      const novosPts=tipo==='manter'?o.pontos:Math.max(o.pontos,pontosPara(o.max,alvoPct));
-      const devolvidos=Math.max(0,novosPts-o.pontos);
-      const agora=new Date().toISOString();
-      const decisao=tipo==='manter'?'resultado-mantido':alvoPct>=100?'devolucao-total':`devolucao-${alvoPct}`;
-      const patch={pontosGanhos:novosPts,pontosOriginais:o.pontos,percentualOriginal:o.pct,percentualRevisado:alvoPct,pontosDevolvidos:devolvidos,revisaoStatus:'revisado',revisaoDecisao:decisao,revisadoEm:agora};
-      histDocs.forEach(d=>tx.update(d.ref,patch));
-      execDocs.forEach(d=>tx.update(d.ref,patch));
-      if(data===hojeISO())tx.update(doc(banco,'tarefas',t.id),patch);
-      resultado={tipo:'decisao',o,patch,novosPts,devolvidos};
-    });
-
-    if(resultado?.tipo==='reverter'){
-      const atualizado={...contextoAtual.historico,pontosGanhos:resultado.o.pontos,pontosOriginais:resultado.o.pontos,percentualOriginal:resultado.o.pct,revisaoStatus:'aguardando'};
+      atualizado={...atual,pontosGanhos:o.pontos,pontosOriginais:o.pontos,percentualOriginal:o.pct,revisaoStatus:'aguardando'};
       delete atualizado.percentualRevisado;delete atualizado.pontosDevolvidos;delete atualizado.revisaoDecisao;delete atualizado.revisadoEm;
       contextoAtual.historico=atualizado;
-      msg.textContent='Decisão revertida. O resultado automático foi restaurado; escolha uma nova opção se desejar.';
-      m.querySelector('#admReviewOriginal').innerHTML=resumoResultado(atualizado,resultado.o);
+      msg.dataset.okOnline='Decisão revertida e sincronizada.';
+      msg.textContent=navigator.onLine===false?'📴 Decisão revertida neste aparelho. Será sincronizada quando a internet voltar.':'Decisão revertida. O resultado automático foi restaurado; escolha uma nova opção se desejar.';
+      m.querySelector('#admReviewOriginal').innerHTML=resumoResultado(atualizado,o);
       m.querySelector('#admReviewAcoes').innerHTML=montarAcoes(atualizado).html;
+      commitSemBloquearOffline(batch,operacaoId,msg);
       return;
     }
 
-    const atualizado={...contextoAtual.historico,...resultado.patch};
+    if(decisaoTomada(atual))throw new Error('Já existe uma decisão para esta ocorrência. Reverta a decisão atual antes de escolher outra.');
+    const alvoPct=tipo==='manter'?o.pct:Math.max(o.pct,Number(pct)||0);
+    const novosPts=tipo==='manter'?o.pontos:Math.max(o.pontos,pontosPara(o.max,alvoPct));
+    const devolvidos=Math.max(0,novosPts-o.pontos);
+    const agora=new Date().toISOString();
+    const decisao=tipo==='manter'?'resultado-mantido':alvoPct>=100?'devolucao-total':`devolucao-${alvoPct}`;
+    const patch={pontosGanhos:novosPts,pontosOriginais:o.pontos,percentualOriginal:o.pct,percentualRevisado:alvoPct,pontosDevolvidos:devolvidos,revisaoStatus:'revisado',revisaoDecisao:decisao,revisadoEm:agora};
+    histDocs.forEach(d=>batch.update(d.ref,patch));
+    execDocs.forEach(d=>batch.update(d.ref,patch));
+    if(data===hojeISO())batch.update(doc(banco,'tarefas',t.id),patch);
+
+    atualizado={...atual,...patch};
     contextoAtual.historico=atualizado;
-    msg.textContent=tipo==='manter'?'Decisão salva: resultado automático mantido. Para mudar, reverta primeiro.':`Decisão salva: ${resultado.devolvidos} ponto(s) devolvido(s). Para mudar, reverta primeiro.`;
-    m.querySelector('#admReviewOriginal').innerHTML=resumoResultado(atualizado,resultado.o);
+    const textoOnline=tipo==='manter'?'Decisão salva: resultado automático mantido. Para mudar, reverta primeiro.':`Decisão salva: ${devolvidos} ponto(s) devolvido(s). Para mudar, reverta primeiro.`;
+    msg.dataset.okOnline=textoOnline;
+    msg.textContent=navigator.onLine===false?`📴 Parecer salvo neste aparelho${tipo==='manter'?'':` (${devolvidos} ponto(s) devolvido(s))`}. Será sincronizado quando a internet voltar.`:textoOnline;
+    m.querySelector('#admReviewOriginal').innerHTML=resumoResultado(atualizado,o);
     m.querySelector('#admReviewAcoes').innerHTML=montarAcoes(atualizado).html;
+    commitSemBloquearOffline(batch,operacaoId,msg);
   }catch(e){
     console.error('Salvar revisão:',e);
-    msg.textContent=e.message||'Não foi possível salvar a revisão. Tente novamente.';
+    msg.textContent=e.message||'Não foi possível registrar a revisão. Tente novamente.';
     buttons.forEach(b=>b.disabled=false);
-  }finally{salvando=false;}
+  }finally{
+    salvando=false;
+  }
 }
 
 window.abrirRevisaoJustificativa=abrir;
